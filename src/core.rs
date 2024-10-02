@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::Metadata;
@@ -7,7 +8,7 @@ use std::rc::Weak;
 use std::time::SystemTime;
 
 const EXCLUDE_DIR: [&str; 2] = ["node_modules", ".git"];
-const TREE_INDENT: usize = 2;
+const TREE_INDENT: usize = 4; // greater than 1
 
 #[derive(Debug)]
 pub enum Child {
@@ -205,21 +206,31 @@ impl DirInfo {
         }
         buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
         buffer += &format!("{}/\n", self.abspath.file_name().unwrap().to_str().unwrap());
-        for child in self.children.values() {
+        // 排序
+        let mut children: Vec<_> = self.children.values().collect();
+        sort_tree(&mut children);
+
+        for child in &children {
             match child {
                 Child::DirInfo(child) => {
                     buffer += &child.tree(depth + 1, last - 1);
-                }
-                Child::FileInfo(child) => {
-                    buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
-                    buffer += &format!("|{}", "-".repeat(TREE_INDENT - 1));
-                    buffer += &format!("{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
                 }
                 Child::NotRecord(child) => {
                     buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
                     buffer += &format!("|{}", "-".repeat(TREE_INDENT - 1));
                     buffer += &format!("<NotRecord>{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
                 }
+                _ => { /* dont care */}
+            }
+        }
+        for child in &children {
+            match child {
+                Child::FileInfo(child) => {
+                    buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
+                    buffer += &format!("|{}", "-".repeat(TREE_INDENT - 1));
+                    buffer += &format!("{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
+                }
+                _ => { /* dont care */}
             }
         }
         buffer
@@ -232,6 +243,22 @@ impl Controllor {
     //     let curpath = env::current_dir().unwrap();
     //     let mut _split = curpath.iter().collect::<Vec<_>>();
     // }
+}
+
+fn sort_tree(children: &mut Vec<&Child>) {
+    children.sort_by(|&a, &b| match (a, b) {
+        (Child::DirInfo(a), Child::FileInfo(b)) => a.abspath.cmp(&b.abspath),
+        (Child::DirInfo(a), Child::DirInfo(b)) => a.abspath.cmp(&b.abspath),
+        (Child::DirInfo(a), Child::NotRecord(b)) => a.abspath.cmp(&b.abspath),
+
+        (Child::FileInfo(a), Child::FileInfo(b)) => a.abspath.cmp(&b.abspath),
+        (Child::FileInfo(a), Child::DirInfo(b)) => a.abspath.cmp(&b.abspath),
+        (Child::FileInfo(a), Child::NotRecord(b)) => a.abspath.cmp(&b.abspath),
+
+        (Child::NotRecord(a), Child::FileInfo(b)) => a.abspath.cmp(&b.abspath),
+        (Child::NotRecord(a), Child::DirInfo(b)) => a.abspath.cmp(&b.abspath),
+        (Child::NotRecord(a), Child::NotRecord(b)) => a.abspath.cmp(&b.abspath),
+    });
 }
 
 fn verify(path: &Path, last_write_time: u128) -> bool {
