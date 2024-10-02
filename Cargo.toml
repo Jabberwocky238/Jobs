@@ -1,0 +1,8 @@
+[package]
+name = "calculate-folder-size"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+csv = "1.1.6"
+crossterm = "0.22"
