@@ -1,10 +1,8 @@
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::Metadata;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::rc::Weak;
 use std::time::SystemTime;
 
 const EXCLUDE_DIR: [&str; 2] = ["node_modules", ".git"];
@@ -14,30 +12,58 @@ const TREE_INDENT: usize = 4; // greater than 1
 pub enum Child {
     FileInfo(FileInfo),
     DirInfo(DirInfo),
-    NotRecord(FileInfo), // last write time, name
+    NotRecord(FileInfo), // dir, but treated as a big file
+}
+
+impl Child {
+    fn get_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        match self {
+            Child::FileInfo(file) => {
+                file.hash(&mut hasher);
+                hasher.finish()
+            },
+            Child::DirInfo(dir) => {
+                dir.hash(&mut hasher);
+                hasher.finish()
+            },
+            Child::NotRecord(file) => {
+                file.hash(&mut hasher);
+                hasher.finish()
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct FileInfo {
-    abspath: PathBuf,
-    last_write_time: u128,
-    size: u64,
+    pub abspath: PathBuf,
+    pub last_write_time: u128,
+    pub size: u64,
+}
+
+impl Hash for FileInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.abspath.hash(state);
+        0.hash(state);
+    }
 }
 
 #[derive(Debug)]
 pub struct DirInfo {
     pub abspath: PathBuf,
-    last_write_time: u128,
+    pub last_write_time: u128,
     pub size: u64,
     pub children: HashMap<u64, Child>,
     pub count_dir: usize,
     pub count_file: usize,
 }
 
-#[derive(Debug)]
-pub struct Controllor {
-    root: DirInfo,
-    current: Weak<DirInfo>,
+impl Hash for DirInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.abspath.hash(state);
+        1.hash(state);
+    }
 }
 
 impl FileInfo {
@@ -83,22 +109,24 @@ impl DirInfo {
         self.last_write_time = get_last_modified(&metadata);
 
         let mut hasher = DefaultHasher::new();
+        // store old children for filtering and updating
         let mut waiting_list = self
             .children
             .iter()
             .map(|(&hash, _)| hash)
             .collect::<HashSet<u64>>();
 
+        // walk in real filesystem
         for entry in fs::read_dir(abspath).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
             let metadata = entry.metadata().unwrap();
             path.hash(&mut hasher);
-            let hash = hasher.finish();
 
             if metadata.is_dir() {
-                let dir_name = path.file_name().unwrap().to_str().unwrap().to_string();
-                // 找waiting_list
+                1.hash(&mut hasher);
+                let hash = hasher.finish();
+                // find waiting_list
                 let mut found = false;
                 if let Some(status) = waiting_list.get(&hash) {
                     match self.children.get_mut(status).unwrap() {
@@ -138,7 +166,8 @@ impl DirInfo {
                 child.scan();
                 self.size += child.size;
                 // 是否应该不记录文件夹细节
-                if !EXCLUDE_DIR.contains(&dir_name.as_str()) {
+                let dir_name = path.file_name().unwrap().to_str().unwrap();
+                if !EXCLUDE_DIR.contains(&dir_name) {
                     self.count_dir += 1 + child.count_dir;
                     self.count_file += child.count_file;
                     self.children.insert(hash, Child::DirInfo(child));
@@ -149,7 +178,9 @@ impl DirInfo {
                     self.children.insert(hash, Child::NotRecord(nr));
                 }
             } else if metadata.is_file() {
-                // 找waiting_list
+                0.hash(&mut hasher);
+                let hash = hasher.finish();
+                // find waiting_list
                 let mut found = false;
                 if let Some(hash) = waiting_list.get(&hash) {
                     if let Child::FileInfo(child) = self.children.get_mut(&hash).unwrap() {
@@ -181,6 +212,7 @@ impl DirInfo {
             }
         }
 
+        // delete non-exist node
         for hash in waiting_list {
             match self.children.get(&hash).unwrap() {
                 Child::DirInfo(child) => {
@@ -237,14 +269,6 @@ impl DirInfo {
     }
 }
 
-
-impl Controllor {
-    // pub fn new() -> Controllor {
-    //     let curpath = env::current_dir().unwrap();
-    //     let mut _split = curpath.iter().collect::<Vec<_>>();
-    // }
-}
-
 fn sort_tree(children: &mut Vec<&Child>) {
     children.sort_by(|&a, &b| match (a, b) {
         (Child::DirInfo(a), Child::FileInfo(b)) => a.abspath.cmp(&b.abspath),
@@ -286,12 +310,12 @@ fn get_last_modified(metadata: &Metadata) -> u128 {
         .as_millis()
 }
 
-mod test_core {
+mod test {
     use crate::core::DirInfo;
     use std::{io::Write, path::Path};
 
     #[test]
-    fn test_scan() {
+    fn scan() {
         let path = Path::new("E:\\nginx-1.26.1");
         let mut dir = DirInfo::new(path);
         dir.scan();
@@ -303,7 +327,7 @@ mod test_core {
     }
 
     #[test]
-    fn test_reuse() {
+    fn reuse() {
         let path = Path::new("E:\\nginx-1.26.1");
         let mut dir = DirInfo::new(path);
         dir.scan();
@@ -323,5 +347,13 @@ mod test_core {
         assert!(dir.size > 13_019_719 + 10000); // 13_036_116
         assert_eq!(dir.count_file, 37 + 1);
         assert_eq!(dir.count_dir, 35);
+    }
+
+    #[test]
+    fn exclude() {
+        let path = Path::new("E:\\1-code\\JS\\jw238.github.io");
+        let mut dir: DirInfo = DirInfo::new(path);
+        dir.scan();
+        assert_eq!(dir.count_file, 121);
     }
 }
