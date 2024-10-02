@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Weak;
 use std::time::SystemTime;
 
-const EXCLUDE_DIR: [&str; 1] = ["node_modules"];
+const EXCLUDE_DIR: [&str; 2] = ["node_modules", ".git"];
+const TREE_INDENT: usize = 2;
 
 #[derive(Debug)]
 pub enum Child {
@@ -76,6 +77,10 @@ impl DirInfo {
     }
 
     pub fn scan(&mut self) {
+        let abspath = self.abspath.as_path();
+        let metadata = fs::metadata(abspath).unwrap();
+        self.last_write_time = get_last_modified(&metadata);
+
         let mut hasher = DefaultHasher::new();
         let mut waiting_list = self
             .children
@@ -83,7 +88,7 @@ impl DirInfo {
             .map(|(&hash, _)| hash)
             .collect::<HashSet<u64>>();
 
-        for entry in fs::read_dir(self.abspath.as_path()).unwrap() {
+        for entry in fs::read_dir(abspath).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
             let metadata = entry.metadata().unwrap();
@@ -130,11 +135,11 @@ impl DirInfo {
                 // 新文件夹
                 let mut child = DirInfo::new(path.as_path());
                 child.scan();
-                self.count_dir += 1 + child.count_dir;
-                self.count_file += child.count_file;
                 self.size += child.size;
                 // 是否应该不记录文件夹细节
                 if !EXCLUDE_DIR.contains(&dir_name.as_str()) {
+                    self.count_dir += 1 + child.count_dir;
+                    self.count_file += child.count_file;
                     self.children.insert(hash, Child::DirInfo(child));
                 } else {
                     let mut nr = FileInfo::new(path.as_path());
@@ -193,39 +198,34 @@ impl DirInfo {
             self.children.remove(&hash);
         }
     }
-    pub fn tree(&self, depth: usize, last: usize) -> String {
+    pub fn tree(&self, depth: usize, last: i32) -> String {
         let mut buffer = String::new();
-        if last == 0 {
+        if last == 0 && last != -1 {
             return buffer;
         }
-        buffer += self.abspath.file_name().unwrap().to_str().unwrap();
-        buffer += "\n";
-        for (_, child) in &self.children {
+        buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
+        buffer += &format!("{}/\n", self.abspath.file_name().unwrap().to_str().unwrap());
+        for child in self.children.values() {
             match child {
                 Child::DirInfo(child) => {
-                    buffer += &"|";
-                    buffer += &"-".repeat((depth + 1) * 4 - 1);
-                    buffer += child.abspath.file_name().unwrap().to_str().unwrap();
-                    buffer += "\n";
                     buffer += &child.tree(depth + 1, last - 1);
                 }
                 Child::FileInfo(child) => {
-                    buffer += &"|";
-                    buffer += &"-".repeat((depth + 1) * 4 - 1);
-                    buffer += child.abspath.file_name().unwrap().to_str().unwrap();
-                    buffer += "\n";
+                    buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
+                    buffer += &format!("|{}", "-".repeat(TREE_INDENT - 1));
+                    buffer += &format!("{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
                 }
-                Child::NotRecord(_) => {
-                    buffer += &"|";
-                    buffer += &"-".repeat((depth + 1) * 4 - 1);
-                    buffer += "NotRecord";
-                    buffer += "\n";
+                Child::NotRecord(child) => {
+                    buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
+                    buffer += &format!("|{}", "-".repeat(TREE_INDENT - 1));
+                    buffer += &format!("<NotRecord>{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
                 }
             }
         }
         buffer
     }
 }
+
 
 impl Controllor {
     // pub fn new() -> Controllor {
