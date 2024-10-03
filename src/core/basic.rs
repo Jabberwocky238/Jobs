@@ -3,34 +3,35 @@ use std::fs;
 use std::fs::Metadata;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
+
 use std::time::SystemTime;
 
-const EXCLUDE_DIR: [&str; 2] = ["node_modules", ".git"];
+const EXCLUDE_DIR: [&str; 3] = ["node_modules", ".git", ".ipynb_checkpoints"];
 const TREE_INDENT: usize = 4; // greater than 1
 
 #[derive(Debug)]
-pub enum Child {
+pub enum JNode {
     FileInfo(FileInfo),
     DirInfo(DirInfo),
     NotRecord(FileInfo), // dir, but treated as a big file
 }
 
-impl Child {
+impl JNode {
     fn get_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         match self {
-            Child::FileInfo(file) => {
+            JNode::FileInfo(file) => {
                 file.hash(&mut hasher);
                 hasher.finish()
-            },
-            Child::DirInfo(dir) => {
+            }
+            JNode::DirInfo(dir) => {
                 dir.hash(&mut hasher);
                 hasher.finish()
-            },
-            Child::NotRecord(file) => {
+            }
+            JNode::NotRecord(file) => {
                 file.hash(&mut hasher);
                 hasher.finish()
-            },
+            }
         }
     }
 }
@@ -54,7 +55,7 @@ pub struct DirInfo {
     pub abspath: PathBuf,
     pub last_write_time: u128,
     pub size: u64,
-    pub children: HashMap<u64, Child>,
+    pub children: HashMap<u64, JNode>,
     pub count_dir: usize,
     pub count_file: usize,
 }
@@ -63,6 +64,17 @@ impl Hash for DirInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.abspath.hash(state);
         1.hash(state);
+    }
+}
+
+impl PartialEq for DirInfo {
+    fn eq(&self, other: &Self) -> bool {
+        let _1 = self.abspath == other.abspath;
+        let _2 = self.last_write_time == other.last_write_time;
+        let _3 = self.size == other.size;
+        let _4 = self.count_dir == other.count_dir;
+        let _5 = self.count_file == other.count_file;
+        _1 && _2 && _3 && _4 && _5
     }
 }
 
@@ -130,7 +142,7 @@ impl DirInfo {
                 let mut found = false;
                 if let Some(status) = waiting_list.get(&hash) {
                     match self.children.get_mut(status).unwrap() {
-                        Child::DirInfo(child) => {
+                        JNode::DirInfo(child) => {
                             found = true;
                             if !verify(child.abspath.as_path(), child.last_write_time) {
                                 self.count_dir -= child.count_dir;
@@ -142,7 +154,7 @@ impl DirInfo {
                                 self.size += child.size;
                             }
                         }
-                        Child::NotRecord(child) => {
+                        JNode::NotRecord(child) => {
                             found = true;
                             if !verify(child.abspath.as_path(), child.last_write_time) {
                                 let metadata = fs::metadata(child.abspath.as_path()).unwrap();
@@ -170,12 +182,12 @@ impl DirInfo {
                 if !EXCLUDE_DIR.contains(&dir_name) {
                     self.count_dir += 1 + child.count_dir;
                     self.count_file += child.count_file;
-                    self.children.insert(hash, Child::DirInfo(child));
+                    self.children.insert(hash, JNode::DirInfo(child));
                 } else {
                     let mut nr = FileInfo::new(path.as_path());
                     nr.size = child.size;
                     nr.last_write_time = child.last_write_time;
-                    self.children.insert(hash, Child::NotRecord(nr));
+                    self.children.insert(hash, JNode::NotRecord(nr));
                 }
             } else if metadata.is_file() {
                 0.hash(&mut hasher);
@@ -183,7 +195,7 @@ impl DirInfo {
                 // find waiting_list
                 let mut found = false;
                 if let Some(hash) = waiting_list.get(&hash) {
-                    if let Child::FileInfo(child) = self.children.get_mut(&hash).unwrap() {
+                    if let JNode::FileInfo(child) = self.children.get_mut(&hash).unwrap() {
                         found = true;
                         // println!("inner found");
                         if !verify(child.abspath.as_path(), child.last_write_time) {
@@ -203,7 +215,7 @@ impl DirInfo {
                 child.update();
                 self.count_file += 1;
                 self.size += child.size;
-                self.children.insert(hash, Child::FileInfo(child));
+                self.children.insert(hash, JNode::FileInfo(child));
             } else if metadata.is_symlink() {
                 self.size += metadata.len();
             } else {
@@ -215,22 +227,23 @@ impl DirInfo {
         // delete non-exist node
         for hash in waiting_list {
             match self.children.get(&hash).unwrap() {
-                Child::DirInfo(child) => {
+                JNode::DirInfo(child) => {
                     self.count_dir -= child.count_dir + 1;
                     self.count_file -= child.count_file;
                     self.size -= child.size;
                 }
-                Child::FileInfo(child) => {
+                JNode::FileInfo(child) => {
                     self.count_file -= 1;
                     self.size -= child.size;
                 }
-                Child::NotRecord(file_info) => {
+                JNode::NotRecord(file_info) => {
                     self.size -= file_info.size;
                 }
             }
             self.children.remove(&hash);
         }
     }
+    
     pub fn tree(&self, depth: usize, last: i32) -> String {
         let mut buffer = String::new();
         if last == 0 && last != -1 {
@@ -242,46 +255,52 @@ impl DirInfo {
         let mut children: Vec<_> = self.children.values().collect();
         sort_tree(&mut children);
 
+        // Print dir first
         for child in &children {
             match child {
-                Child::DirInfo(child) => {
+                JNode::DirInfo(child) => {
                     buffer += &child.tree(depth + 1, last - 1);
                 }
-                Child::NotRecord(child) => {
+                JNode::NotRecord(child) => {
                     buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
                     buffer += &format!("|{}", "-".repeat(TREE_INDENT - 1));
-                    buffer += &format!("<NotRecord>{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
+                    buffer += &format!(
+                        "<NotRecord>{}\n",
+                        child.abspath.file_name().unwrap().to_str().unwrap()
+                    );
                 }
-                _ => { /* dont care */}
+                _ => { /* dont care */ }
             }
         }
+        // print file after
         for child in &children {
             match child {
-                Child::FileInfo(child) => {
+                JNode::FileInfo(child) => {
                     buffer += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
                     buffer += &format!("|{}", "-".repeat(TREE_INDENT - 1));
-                    buffer += &format!("{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
+                    buffer +=
+                        &format!("{}\n", child.abspath.file_name().unwrap().to_str().unwrap());
                 }
-                _ => { /* dont care */}
+                _ => { /* dont care */ }
             }
         }
         buffer
     }
 }
 
-fn sort_tree(children: &mut Vec<&Child>) {
+fn sort_tree(children: &mut Vec<&JNode>) {
     children.sort_by(|&a, &b| match (a, b) {
-        (Child::DirInfo(a), Child::FileInfo(b)) => a.abspath.cmp(&b.abspath),
-        (Child::DirInfo(a), Child::DirInfo(b)) => a.abspath.cmp(&b.abspath),
-        (Child::DirInfo(a), Child::NotRecord(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::DirInfo(a), JNode::FileInfo(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::DirInfo(a), JNode::DirInfo(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::DirInfo(a), JNode::NotRecord(b)) => a.abspath.cmp(&b.abspath),
 
-        (Child::FileInfo(a), Child::FileInfo(b)) => a.abspath.cmp(&b.abspath),
-        (Child::FileInfo(a), Child::DirInfo(b)) => a.abspath.cmp(&b.abspath),
-        (Child::FileInfo(a), Child::NotRecord(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::FileInfo(a), JNode::FileInfo(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::FileInfo(a), JNode::DirInfo(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::FileInfo(a), JNode::NotRecord(b)) => a.abspath.cmp(&b.abspath),
 
-        (Child::NotRecord(a), Child::FileInfo(b)) => a.abspath.cmp(&b.abspath),
-        (Child::NotRecord(a), Child::DirInfo(b)) => a.abspath.cmp(&b.abspath),
-        (Child::NotRecord(a), Child::NotRecord(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::NotRecord(a), JNode::FileInfo(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::NotRecord(a), JNode::DirInfo(b)) => a.abspath.cmp(&b.abspath),
+        (JNode::NotRecord(a), JNode::NotRecord(b)) => a.abspath.cmp(&b.abspath),
     });
 }
 

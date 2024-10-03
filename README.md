@@ -3,8 +3,8 @@
 
 ## Aiming
 - [ ] Version 1
-  - [ ] Scan disk and calculate folder size, reusing existing fsnodes
-  - [ ] Serialize and Deserialize
+  - [x] Scan disk and calculate folder size, reusing existing fsnodes.
+  - [x] Serialize and Deserialize
   - [ ] Console interaction
 - [ ] Version 2
   - [ ] Fuzz search, prefix and suffix trie
@@ -18,3 +18,9 @@
   - Answer: `crossterm`, a cross-platform library for terminal control.
 - [ ] How to serialize and deserialize?
   - Answer: deprecate JSON, use CSV instead.
+
+## Debug
+```sh
+cargo run --release --bin project -- --debug
+cargo test -- --test-threads=1
+```
