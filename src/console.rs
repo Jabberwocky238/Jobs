@@ -14,13 +14,12 @@ use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use crossterm::Command;
 
-use crate::core::DirInfo;
 use crate::core::JNode;
 
-struct Console<'a> {
-    root: DirInfo,
-    current: &'a mut DirInfo,
-}
+// struct Console<'a> {
+//     // root: DirInfo,
+//     // current: &'a mut DirInfo,
+// }
 
 // impl<'a> Console<'a> {
 //     pub fn new() -> Self {

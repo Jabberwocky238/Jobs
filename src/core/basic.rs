@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::format;
 use std::fs::{self, Metadata};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -26,7 +27,18 @@ impl JNode {
         }
     }
 }
-
+impl FileInfo {
+    pub fn verify(&self) -> bool {
+        let metadata = fs::metadata(self.abspath.as_path()).unwrap();
+        self.last_write_time == get_last_modified(&metadata) && self.size == metadata.len()
+    }
+}
+impl DirInfo {
+    pub fn verify(&self) -> bool {
+        let metadata = fs::metadata(self.abspath.as_path()).unwrap();
+        self.last_write_time == get_last_modified(&metadata)
+    }
+}
 #[derive(Debug, Clone)]
 pub struct FileInfo {
     pub abspath: PathBuf,
@@ -41,7 +53,6 @@ pub struct DirInfo {
     pub size: u64,
     pub count_dir: usize,
     pub count_file: usize,
-    fully_scan: bool,
 }
 
 pub struct JManager {
@@ -54,10 +65,12 @@ impl JManager {
             map: Rc::new(RefCell::new(HashMap::new())),
         }
     }
-    // pub fn find(&self, path: &Path) -> &JNode {
-    //     self.find_mut(path)
-    // }
-    pub fn find_mut(&mut self, path: &Path) -> JNode {
+    pub fn find(&self, path: &str) -> Option<JNode> {
+        let path = Path::new(path);
+        self.map.borrow().get(path).cloned()
+    }
+    pub fn find_mut(&mut self, path: &str) -> JNode {
+        let path = Path::new(path);
         self.map.borrow_mut().entry(path.to_path_buf()).or_insert_with(|| {
             if !fs::metadata(path).is_ok() {
                 panic!("path not exist: {}", path.to_str().unwrap());
@@ -72,9 +85,16 @@ impl JManager {
             }
         }).clone()
     }
-    pub fn scan(&mut self, path: &Path) {
+    pub fn scan(&mut self, path: &str) {
         if let JNode::DirInfo(mut dir_info) = self.find_mut(path) {
             dir_info.scan(self.map.clone());
+        }
+    }
+    pub fn tree(&self, path: &str) -> Result<String, &str> {
+        if let Some(JNode::DirInfo(dir_info)) = self.find(path) {
+            Ok(dir_info.tree(self.map.clone(), 0))
+        } else {
+            Err("Only dir can be tree")
         }
     }
 }
@@ -97,15 +117,7 @@ impl FileInfo {
         self.last_write_time = get_last_modified(&metadata);
         self.size = metadata.len();
     }
-    pub fn hash(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.abspath.hash(&mut hasher);
-        hasher.finish()
-    }
-    pub fn verify(&self) -> bool {
-        let metadata = fs::metadata(self.abspath.as_path()).unwrap();
-        self.last_write_time == get_last_modified(&metadata) && self.size == metadata.len()
-    }
+
     pub fn not_record_scan(&mut self) {
         // 遍历所有文件和文件夹计算总值
         let abspath = self.abspath.to_path_buf();
@@ -139,35 +151,62 @@ impl DirInfo {
             size: metadata.len(),
             count_dir: 0,
             count_file: 0,
-            fully_scan: false,
         }
     }
-    pub fn hash(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.abspath.hash(&mut hasher);
-        hasher.finish()
-    }
-    pub fn verify(&self) -> bool {
-        let metadata = fs::metadata(self.abspath.as_path()).unwrap();
-        self.last_write_time == get_last_modified(&metadata)
+    pub fn tree(&self, map: Rc<RefCell<HashMap<PathBuf, JNode>>>, depth: usize) -> String {
+        let mut result = String::new();
+        result += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth);
+        result += &format!("{}/\n", self.abspath.file_name().unwrap().to_str().unwrap());
+
+        for child in map.borrow().values() {
+            match child {
+                JNode::DirInfo(child) => {
+                    result += &child.tree(map.clone(), depth + 1);
+                }
+                JNode::NotRecord(child) => {
+                    let file_name = child.abspath.file_name().unwrap().to_str().unwrap();
+                    result += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth + 1);
+                    result += &format!("{}/\n", file_name);
+                }
+                _ => {}
+            }
+        }
+        for child in map.borrow().values() {
+            match child {
+                JNode::FileInfo(child) => {
+                    let file_name = child.abspath.file_name().unwrap().to_str().unwrap();
+                    result += &format!("|{}", " ".repeat(TREE_INDENT - 1)).repeat(depth + 1);
+                    result += &format!("{}/\n", file_name);
+                }
+                _ => {}
+            }
+        }
+        result
     }
     pub fn scan(&mut self, map: Rc<RefCell<HashMap<PathBuf, JNode>>>) {
         let abspath = self.abspath.as_path();
+        dbg!(&abspath);
 
         // remove non-existing children
         let new_children = fs::read_dir(abspath)
             .unwrap()
             .map(|x| x.unwrap().path())
             .collect::<Vec<_>>();
+        
+        let new_children = dbg!(new_children);
+
         let old_children = map.borrow()
             .keys()
-            .filter(|x| x.starts_with(abspath))
+            .filter(|x| !x.starts_with(abspath))
             .map(|x| x.clone())
             .collect::<Vec<_>>();
+        let old_children = dbg!(old_children);
+
         let non_existing_children = old_children
             .iter()
             .filter(|x| !new_children.contains(x))
             .collect::<Vec<_>>();
+        let non_existing_children = dbg!(non_existing_children);
 
         for child_path in non_existing_children {
             let child = map.borrow_mut().remove(child_path).unwrap();
@@ -269,23 +308,7 @@ fn sort_tree(children: &mut Vec<&JNode>) {
     });
 }
 
-fn verify(path: &Path, last_write_time: u128) -> bool {
-    if !path.is_absolute() {
-        panic!("path must be absolute");
-    }
-    match fs::metadata(path) {
-        Ok(metadata) => {
-            if get_last_modified(&metadata) == last_write_time {
-                true
-            } else {
-                false
-            }
-        }
-        Err(_) => false,
-    }
-}
-
-fn get_last_modified(metadata: &Metadata) -> u128 {
+pub(crate) fn get_last_modified(metadata: &Metadata) -> u128 {
     metadata
         .modified()
         .unwrap()

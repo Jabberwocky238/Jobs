@@ -2,13 +2,15 @@ use csv::Reader;
 use csv::Writer;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::{env, error::Error, fs::File};
 
+use super::basic::get_last_modified;
 use super::basic::DirInfo;
 use super::basic::FileInfo;
+use super::basic::JManager;
 use super::basic::JNode;
 
 
@@ -22,20 +24,8 @@ enum DumpType {
     NOTRECORD,
 }
 
-impl Hash for DumpType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            DumpType::FILE => 0.hash(state),
-            DumpType::DIR => 1.hash(state),
-            DumpType::NOTRECORD => 2.hash(state),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct DumpData {
-    pub chash: u64,
-    pub phash: u64,
+struct DumpData {
     pub path: String,
     pub last_write_time: u128,
     pub size: u64,
@@ -44,35 +34,18 @@ pub struct DumpData {
     pub count_dir: usize,
 }
 
-impl Hash for DumpData {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.chash.hash(state);
-        self.phash.hash(state);
-        self.path.hash(state);
-        self.last_write_time.hash(state);
-        self.size.hash(state);
-        self.t.hash(state);
-        self.count_file.hash(state);
-        self.count_dir.hash(state);
-    }
-}
-
 
 impl DumpData {
-    pub fn from_node(node: &JNode, phash: u64) -> Self {
-        let mut hasher = DefaultHasher::new();
+    pub fn from_node(node: &JNode) -> Self {
         match node {
             JNode::FileInfo(file) => {
-                file.hash(&mut hasher);
-                file.dump(phash, DumpType::FILE)
+                file.dump(DumpType::FILE)
             }
             JNode::DirInfo(dir_info) => {
-                dir_info.hash(&mut hasher);
-                dir_info.dump(phash)
+                dir_info.dump()
             }
             JNode::NotRecord(file_info) => {
-                file_info.hash(&mut hasher);
-                file_info.dump(phash, DumpType::NOTRECORD)
+                file_info.dump(DumpType::NOTRECORD)
             }
         }
     }
@@ -91,7 +64,6 @@ impl DumpData {
                     abspath: Path::new(&self.path).to_path_buf(),
                     last_write_time: self.last_write_time,
                     size: self.size,
-                    children: HashMap::new(),
                     count_file: self.count_file,
                     count_dir: self.count_dir,
                 };
@@ -110,12 +82,8 @@ impl DumpData {
 }
 
 impl DirInfo {
-    pub fn dump(&self, phash: u64) -> DumpData {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
+    fn dump(&self) -> DumpData {
         DumpData {
-            chash: hasher.finish(),
-            phash,
             path: self.abspath.as_path().to_str().unwrap().to_owned(),
             last_write_time: self.last_write_time,
             size: self.size,
@@ -128,12 +96,8 @@ impl DirInfo {
 
 
 impl FileInfo {
-    pub fn dump(&self, phash: u64, t: DumpType) -> DumpData {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
+    fn dump(&self, t: DumpType) -> DumpData {
         DumpData {
-            chash: hasher.finish(),
-            phash,
             path: self.abspath.as_path().to_str().unwrap().to_owned(),
             last_write_time: self.last_write_time,
             size: self.size,
@@ -145,10 +109,8 @@ impl FileInfo {
 }
 
 /// Serializer for JNode
-pub struct Serializer;
-
-impl Serializer {
-    pub fn serialize(root: &DirInfo) -> Result<(), Box<dyn Error>> {
+impl JManager {
+    pub fn serialize(&self) -> Result<(), Box<dyn Error>> {
         // 获取用户的 HOME 目录
         let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
         // 创建 CSV 文件的完整路径
@@ -157,14 +119,15 @@ impl Serializer {
         let file = File::create(&file_path)?;
         let mut wtr = Writer::from_writer(file);
 
-        wtr.serialize(root.dump(0))?;
-        root.serialize(&mut wtr)?;
+        for data in self.map.borrow().values().map(|node| DumpData::from_node(node)) {
+            wtr.serialize(&data)?;
+        }
         wtr.flush()?;
         println!("CSV file created at: {}", file_path);
         Ok(())
     }
 
-    pub fn deserialize() -> Result<DirInfo, Box<dyn Error>> {
+    pub fn deserialize(&mut self) -> Result<(), Box<dyn Error>> {
         // 获取用户的 HOME 目录
         let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
         // 创建 CSV 文件的完整路径
@@ -173,84 +136,46 @@ impl Serializer {
         let file = File::open(&file_path)?;
         let mut rdr = Reader::from_reader(file);
 
-        let mut symbols: HashMap<u64, JNode> = HashMap::new();
-        let mut root: Option<JNode> = None;
-        let data = rdr
-            .deserialize()
+        let mut data = rdr.deserialize()
             .map(|result| result.unwrap())
-            .collect::<Vec<DumpData>>()
-            .into_iter()
-            .rev()
             .collect::<Vec<DumpData>>();
 
-        for dumpdata in data.iter() {
-            symbols
-                .entry(dumpdata.chash)
-                .or_insert_with(|| dumpdata.to_node());
-            let child_node = symbols.remove(&dumpdata.chash).unwrap();
-
-            if dumpdata.phash == 0 {
-                root = Some(child_node);
-                continue;
-            }
-
-            let parent_node = symbols.entry(dumpdata.phash).or_insert_with(|| {
-                data.iter()
-                    .find(|d| d.chash == dumpdata.phash)
-                    .unwrap()
-                    .to_node()
-            });
-            if let JNode::DirInfo(parent) = parent_node {
-                parent.children.insert(dumpdata.chash, child_node);
-            }
-        }
-        match root {
-            Some(JNode::DirInfo(root)) => Ok(root),
-            _ => Err("Fail to deserialize".into()),
-        }
-    }
-}
-
-impl DirInfo {
-    pub fn serialize(&self, wtr: &mut Writer<File>) -> Result<(), Box<dyn Error>> {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        let phash = hasher.finish();
-        // hash, parent_hash, path, size, modifytime, type, cnt_child, cnt_dir
-        for (_, child) in &self.children {
-            wtr.serialize(DumpData::from_node(child, phash))?;
-            if let JNode::DirInfo(child) = child {
-                child.serialize(wtr)?;
+        for dumpdata in data.drain(..) {
+            let path = Path::new(&dumpdata.path);
+            match self.map.borrow_mut().get_mut(path) {
+                Some(value) => {
+                    if value.verify() {
+                        continue;
+                    }
+                    match value {
+                        JNode::FileInfo(v) => {
+                            v.update();
+                        },
+                        JNode::DirInfo(v) => {
+                            let metadata = fs::metadata(path)?;
+                            // dumpdata is newer
+                            if dumpdata.last_write_time == get_last_modified(&metadata) {
+                                v.last_write_time = dumpdata.last_write_time;
+                                v.size = dumpdata.size;
+                                v.count_file = dumpdata.count_file;
+                            }
+                        },
+                        JNode::NotRecord(v) => {
+                            let metadata = fs::metadata(path)?;
+                            // dumpdata is newer
+                            if dumpdata.last_write_time == get_last_modified(&metadata) {
+                                v.last_write_time = dumpdata.last_write_time;
+                                v.size = dumpdata.size;
+                            }
+                        }
+                    }
+                },
+                None => {
+                    let node = dumpdata.to_node();
+                    self.map.borrow_mut().insert(path.to_path_buf(), node);
+                },
             }
         }
-        wtr.flush()?;
         Ok(())
-    }
-}
-
-mod test {
-    use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn serialize1() {
-        let path = Path::new("E:\\nginx-1.26.1");
-        let mut dir = DirInfo::new(path);
-        dir.scan();
-        Serializer::serialize(&dir).unwrap();
-        let dir2 = Serializer::deserialize().unwrap();
-        
-        assert_eq!(&dir2, &dir);
-    }
-
-    #[test]
-    fn serialize2() {
-        let path = Path::new("E:\\1-School\\计算机视觉与模式识别");
-        let mut dir = DirInfo::new(path);
-        dir.scan();
-        Serializer::serialize(&dir).unwrap();
-        let dir2 = Serializer::deserialize().unwrap();
-        
-        assert_eq!(&dir2, &dir);
     }
 }
