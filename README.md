@@ -12,3 +12,9 @@
   - [ ] Python interface
 - [ ] Version 3
   - [ ] synchronize with remote server
+
+## Difficulties
+- [ ] How to gracefully perform console interaction?
+  - Answer: `crossterm`, a cross-platform library for terminal control.
+- [ ] How to serialize and deserialize?
+  - Answer: deprecate JSON, use CSV instead.
