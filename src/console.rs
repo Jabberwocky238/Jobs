@@ -22,37 +22,37 @@ struct Console<'a> {
     current: &'a mut DirInfo,
 }
 
-impl<'a> Console<'a> {
-    pub fn new() -> Self {
-        let current_path = std::env::current_dir().unwrap();
-        let split = current_path
-            .iter()
-            .map(|x| x.to_str().unwrap().to_string())
-            .collect::<Vec<_>>();
-        let mut split = split
-            .iter()
-            .enumerate()
-            .map(|(i, v)| Path::new(&split[..=i].join(&"/")).to_owned())
-            .map(|p| DirInfo::new(&p))
-            .collect::<Vec<_>>();
+// impl<'a> Console<'a> {
+//     pub fn new() -> Self {
+//         let current_path = std::env::current_dir().unwrap();
+//         let split = current_path
+//             .iter()
+//             .map(|x| x.to_str().unwrap().to_string())
+//             .collect::<Vec<_>>();
+//         let mut split = split
+//             .iter()
+//             .enumerate()
+//             .map(|(i, v)| Path::new(&split[..=i].join(&"/")).to_owned())
+//             .map(|p| DirInfo::new(&p))
+//             .collect::<Vec<_>>();
 
-        let mut hasher: DefaultHasher = DefaultHasher::new();
+//         let mut hasher: DefaultHasher = DefaultHasher::new();
 
-        for i in 0..split.len() - 1 {
-            split[i + 1].hash(&mut hasher);
-            let child_hash = hasher.finish();
-            split[i].children.insert(child_hash, JNode::DirInfo(split[i + 1]));
-        }
+//         for i in 0..split.len() - 1 {
+//             split[i + 1].hash(&mut hasher);
+//             let child_hash = hasher.finish();
+//             split[i].children.insert(child_hash, JNode::DirInfo(split[i + 1]));
+//         }
         
-        let root = split.remove(0);
+//         let root = split.remove(0);
         
         
-        Self {
-            root,
-            current,
-        }
-    }
-}
+//         Self {
+//             root,
+//             current,
+//         }
+//     }
+// }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut history: Vec<String> = vec![];
