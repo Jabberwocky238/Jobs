@@ -17,7 +17,7 @@
 - [ ] How to gracefully perform console interaction?
   - Answer: `crossterm`, a cross-platform library for terminal control.
 - [ ] How to serialize and deserialize?
-  - Answer: deprecate JSON, use CSV instead.
+  - Answer: `serde`, deprecate JSON, use CSV instead.
 
 ## Debug
 ```sh

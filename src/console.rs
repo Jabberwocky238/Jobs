@@ -1,18 +1,58 @@
+use std::error::Error;
+use std::hash::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::io::Write;
+use std::path::Path;
+use std::rc::Rc;
 
-
-
+use crossterm::cursor;
+use crossterm::event::read;
+use crossterm::event::Event;
+use crossterm::event::KeyCode;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use crossterm::Command;
 
-use std::error::Error;
+use crate::core::DirInfo;
+use crate::core::JNode;
 
-use std::io::Write;
-// use calculate_folder_size::DirInfo;
-use crossterm::event::read;
-use crossterm::event::KeyCode;
-use crossterm::event::Event;
-use crossterm::cursor;
+struct Console<'a> {
+    root: DirInfo,
+    current: &'a mut DirInfo,
+}
+
+impl<'a> Console<'a> {
+    pub fn new() -> Self {
+        let current_path = std::env::current_dir().unwrap();
+        let split = current_path
+            .iter()
+            .map(|x| x.to_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        let mut split = split
+            .iter()
+            .enumerate()
+            .map(|(i, v)| Path::new(&split[..=i].join(&"/")).to_owned())
+            .map(|p| DirInfo::new(&p))
+            .collect::<Vec<_>>();
+
+        let mut hasher: DefaultHasher = DefaultHasher::new();
+
+        for i in 0..split.len() - 1 {
+            split[i + 1].hash(&mut hasher);
+            let child_hash = hasher.finish();
+            split[i].children.insert(child_hash, JNode::DirInfo(split[i + 1]));
+        }
+        
+        let root = split.remove(0);
+        
+        
+        Self {
+            root,
+            current,
+        }
+    }
+}
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut history: Vec<String> = vec![];
@@ -77,7 +117,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                         println!("{:?}", event);
                     }
                 }
-            },
+            }
             Event::Mouse(event) => println!("{:?}", event),
             Event::Resize(width, height) => println!("New size {}x{}", width, height),
         }

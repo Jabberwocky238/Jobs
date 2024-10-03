@@ -16,26 +16,6 @@ pub enum JNode {
     NotRecord(FileInfo), // dir, but treated as a big file
 }
 
-impl JNode {
-    fn get_hash(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        match self {
-            JNode::FileInfo(file) => {
-                file.hash(&mut hasher);
-                hasher.finish()
-            }
-            JNode::DirInfo(dir) => {
-                dir.hash(&mut hasher);
-                hasher.finish()
-            }
-            JNode::NotRecord(file) => {
-                file.hash(&mut hasher);
-                hasher.finish()
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct FileInfo {
     pub abspath: PathBuf,
