@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{self, File};
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::env;
@@ -13,6 +13,7 @@ use super::action::{ManagerAction, ManagerStorage, NodeAction, Scanner};
 use super::node::{DumpData, JNode, JNodeInfo};
 
 const ROOT_PARENT: u64 = 0;
+const IGNORE_DIR: [&str; 2] = ["node_modules", ".git"];
 
 #[derive(Debug)]
 pub struct JManager<H, N> {
@@ -35,6 +36,21 @@ impl JManager<u64, JNode> {
     pub fn get_info(&self, node: &u64) -> JNodeInfo {
         self.nodes.get(node).unwrap().clone().into()
     }
+    pub fn print_info(&self, node: &u64) -> String {
+        self.nodes.get(node).unwrap().to_string()
+    }
+
+    #[inline]
+    fn filter_dir(&self, list: &mut Vec<u64>) {
+        list.retain(|&x| {
+            let node = self.nodes.get(&x).unwrap();
+            if let JNode::Dir(_) = node {
+                true
+            } else {
+                false
+            }
+        });
+    }
 }
 
 impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
@@ -55,7 +71,7 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
                     .or_insert_with(HashSet::new)
                     .insert(h);
             } else {
-                // check the root, if it is not exist, create it
+                // check the parent, if it is not exist, create it
                 let pp = get_parent_pathbuf(path);
                 let ph = self.locate_node(&pp)?;
                 self.phash.insert(h, ph);
@@ -101,13 +117,29 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
         }
         Ok(())
     }
-
+    
     fn update_node(&mut self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
         if !self.nodes.contains_key(&node) {
             return Err("Node not exist".into());
         }
-        // 现将所有子节点入栈，然后逐个更新叠加。
-        todo!()
+        let mut waiting_list = vec![node.clone()];
+        let mut to_update = vec![node.clone()];
+
+        while let Some(h) = waiting_list.pop() {
+            self.scan_folder(&h)?;
+            let mut chs = self.get_children(&h);
+            self.filter_dir(&mut chs);
+            waiting_list.extend(chs.clone());
+            to_update.extend(chs);
+        }
+
+        while let Some(h) = to_update.pop() {
+            let sum_size = self.get_children(&h).iter().map(|&h| self.nodes.get(&h).unwrap().size()).sum();
+            self.nodes.entry(h).and_modify(|v| {
+                v.set_size(sum_size);   
+            });
+        }
+        Ok(())
     }
     fn get_parent(&self, node: &u64) -> u64 {
         *self.phash.get(node).unwrap_or(&ROOT_PARENT)
@@ -119,17 +151,47 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
 }
 
 impl Scanner<u64> for JManager<u64, JNode> {
-    fn scan_folder(&mut self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
-    }
-
-    fn scan_folder_raw(&self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
-        // 用循环，不要用递归
+    /// 保证map中有所有节点
+    fn scan_folder(&mut self, h: &u64) -> Result<(), Box<dyn std::error::Error>> {
+        let path = self.nodes.get(h).unwrap().abspath();
+        if is_excluded(&path) {
+            return self.scan_folder_raw(h);
+        }
+        let mut scan_list = vec![h.clone()];
+        while let Some(h) = scan_list.pop() {
+            self.scan_folder_once(&h)?;
+            let chs = self.get_children(&h);
+            scan_list.extend(chs);
+        }
         Ok(())
     }
 
+    fn scan_folder_raw(&mut self, h: &u64) -> Result<(), Box<dyn std::error::Error>> {
+        let path = self.nodes.get(h).unwrap().abspath();
+        let paths = read_dir_recursive(path)?;
+
+        let mut size = 0;
+        for path in paths {
+            let metadata = fs::metadata(&path)?;
+            size += metadata.len();
+        }
+        self.nodes.entry(*h).and_modify(|v| {
+            v.set_size(size);
+        });
+        Ok(())
+    }
+    /// 保证map中有所有节点
     fn scan_folder_once(&mut self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
-        todo!()
+        let path = self.nodes.get(node).unwrap().abspath();
+        if is_excluded(&path) {
+            return self.scan_folder_raw(node);
+        }
+        for item in fs::read_dir(path)? {
+            let item = item?;
+            let path = item.path();
+            self.locate_node(&path)?;
+        }           
+        Ok(())
     }
 }
 
@@ -208,4 +270,24 @@ pub fn is_root(path: &PathBuf) -> bool {
 #[inline]
 fn is_path_exist(path: &PathBuf) -> bool {
     path.exists()
+}
+
+#[inline]
+fn is_excluded(path: &PathBuf) -> bool {
+    IGNORE_DIR.contains(&path.file_name().unwrap().to_str().unwrap())
+}
+
+fn read_dir_recursive(path: &PathBuf) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() && !is_excluded(&path) {
+            let t = read_dir_recursive(&path)?;
+            paths.extend(t);
+        } else {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
 }

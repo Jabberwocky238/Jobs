@@ -19,7 +19,6 @@ pub struct FileNode {
     pub abspath: PathBuf,
     pub last_write_time: u128,
     pub size: u64,
-    pub _valid: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +28,7 @@ pub struct DirNode {
     pub size: u64,
     pub count_dir: usize,
     pub count_file: usize,
-    pub _valid: bool,
+    pub _scaned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +38,7 @@ pub struct DumpData {
     pub size: u64,
     pub count_dir: usize,
     pub count_file: usize,
-    pub _valid: bool,
+    pub _scaned: bool,
 }
 
 #[derive(Debug)]
@@ -57,6 +56,12 @@ pub struct JNodeInfo {
 /// -----------------------------------------------------------------------------------------------
 
 impl JNode {
+    pub fn is_valid(&self) -> bool {
+        match self {
+            Self::File(file) => get_last_modified(&file.abspath) == file.last_write_time,
+            Self::Dir(dir) => dir._scaned && get_last_modified(&dir.abspath) == dir.last_write_time,
+        }
+    }
     pub fn abspath(&self) -> &PathBuf {
         match self {
             Self::File(file) => &file.abspath,
@@ -75,6 +80,14 @@ impl JNode {
             Self::Dir(dir) => dir.size,
         }
     }
+    pub fn set_size(&mut self, size: u64) {
+        match self {
+            Self::File(file) => file.size = size,
+            Self::Dir(dir) => dir.size = size,
+        }
+    }
+
+    /// for Dumper
     pub fn load(&mut self, dumped: &JNode) {
         // TODO: advanced check for last dump date
         match (self, dumped) {
@@ -82,7 +95,6 @@ impl JNode {
                 if dumped.last_write_time <= me.last_write_time {
                     return;
                 }
-                me._valid = dumped._valid;
                 me.last_write_time = dumped.last_write_time;
                 me.size = dumped.size;
             }
@@ -90,7 +102,7 @@ impl JNode {
                 if dumped.last_write_time <= me.last_write_time {
                     return;
                 }
-                me._valid = dumped._valid;
+                me._scaned = dumped._scaned;
                 me.last_write_time = dumped.last_write_time;
                 me.size = dumped.size;
                 me.count_dir = dumped.count_dir;
@@ -106,7 +118,12 @@ impl Into<JNodeInfo> for JNode {
         let name = if is_root(&self.abspath()) {
             self.abspath().to_string_lossy().to_string()
         } else {
-            self.abspath().file_name().unwrap().to_str().unwrap().to_string()
+            self.abspath()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string()
         };
         match self {
             Self::File(file) => JNodeInfo {
@@ -220,7 +237,6 @@ impl From<DumpData> for FileNode {
             abspath: pathbuf.canonicalize().unwrap(),
             last_write_time: value.last_write_time,
             size: value.size,
-            _valid: value._valid,
         }
     }
 }
@@ -233,7 +249,7 @@ impl Into<DumpData> for FileNode {
             size: self.size,
             count_dir: 0,
             count_file: 0,
-            _valid: self._valid,
+            _scaned: true,
         }
     }
 }
@@ -259,7 +275,6 @@ impl NodeAction for FileNode {
             abspath: abspath.to_path_buf(),
             last_write_time,
             size,
-            _valid: true,
         }
     }
 
@@ -295,7 +310,7 @@ impl From<DumpData> for DirNode {
             size: data.size,
             count_dir: data.count_dir,
             count_file: data.count_file,
-            _valid: data._valid,
+            _scaned: data._scaned,
         }
     }
 }
@@ -308,7 +323,7 @@ impl Into<DumpData> for DirNode {
             size: self.size,
             count_dir: self.count_dir,
             count_file: self.count_file,
-            _valid: self._valid,
+            _scaned: self._scaned,
         }
     }
 }
@@ -346,7 +361,7 @@ impl NodeAction for DirNode {
             size,
             count_dir,
             count_file,
-            _valid: false,
+            _scaned: false,
         }
     }
 
@@ -375,7 +390,7 @@ fn get_last_modified(abspath: &PathBuf) -> u128 {
 }
 
 #[inline]
-fn format_modify_time(modify_time: u128) -> SystemTime {
+pub fn format_modify_time(modify_time: u128) -> SystemTime {
     SystemTime::UNIX_EPOCH
         .checked_add(Duration::from_millis(modify_time as u64))
         .unwrap()
