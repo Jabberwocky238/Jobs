@@ -140,19 +140,26 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
                 .iter()
                 .map(|&h| self.nodes.get(&h).unwrap())
                 .collect::<Vec<_>>();
+            let is_dir = |v: &JNode| {if let JNode::Dir(_) = v { true } else { false }};
+            let is_file = |v: &JNode| {if let JNode::File(_) = v { true } else { false }};
+            let all_dirs = all.clone().into_iter().filter(|arg0: &&JNode| is_dir(*arg0));
             let sum_size = all.clone().into_iter().map(|v| v.size()).sum();
-            let sum_file = all
-                .clone()
-                .into_iter()
-                .filter(|v| if let JNode::File(_) = v { true } else { false })
-                .count();
-            let sum_dir = all
-                .clone()
-                .into_iter()
-                .filter(|v| if let JNode::Dir(_) = v { true } else { false })
-                .count();
+            let sum_file = all.clone().into_iter().map(|v|{
+                match v {
+                    JNode::File(v) => 1,
+                    JNode::Dir(v) => v.count_file,
+                    _ => 0
+                }
+            }).sum();
+            let sum_dir = all.clone().into_iter().map(|v|{
+                match v {
+                    JNode::Dir(v) => 1 + v.count_dir,
+                    _ => 0
+                }
+            }).sum();
             self.nodes.entry(h).and_modify(|v| {
-                v.set(Some(sum_size), None, None, Some(sum_file), Some(sum_dir));
+                dbg!(v.abspath(), sum_size, sum_file, sum_dir);
+                v.set(Some(sum_size), None, None, Some(sum_dir), Some(sum_file));
             });
         }
         Ok(())
