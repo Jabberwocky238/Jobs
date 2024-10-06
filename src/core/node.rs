@@ -1,9 +1,10 @@
 use super::action::NodeAction;
+use std::fmt::Debug;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::ops::{Sub, SubAssign};
 use std::path::PathBuf;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone)]
 pub enum JNode {
@@ -29,16 +30,33 @@ pub struct DirNode {
     pub _valid: bool,
 }
 
-
 /// All implementation is down below
 /// -----------------------------------------------------------------------------------------------
 /// -----------------------------------------------------------------------------------------------
+
+impl Into<PathBuf> for JNode {
+    fn into(self) -> PathBuf {
+        match self {
+            Self::File(file) => file.abspath,
+            Self::Dir(dir) => dir.abspath,
+        }
+    }
+}
 
 impl Hash for JNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
             Self::File(file) => file.hash(state),
             Self::Dir(dir) => dir.hash(state),
+        }
+    }
+}
+
+impl std::fmt::Display for JNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::File(file) => write!(f, "{}", file),
+            Self::Dir(dir) => write!(f, "{}", dir),
         }
     }
 }
@@ -80,6 +98,18 @@ impl Hash for FileNode {
     }
 }
 
+impl std::fmt::Display for FileNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let content = format!(
+            "[FileNode] abspath: {:?}, modify: {:?}, size: {:?}",
+            self.abspath,
+            format_modify_time(self.last_write_time),
+            (self.size as f64 / 1024.0 / 1024.0)
+        );
+        write!(f, "{}", content)
+    }
+}
+
 impl NodeAction for FileNode {
     fn new(abspath: &PathBuf) -> Self {
         let metadata = fs::metadata(&abspath).unwrap();
@@ -112,6 +142,20 @@ impl NodeAction for FileNode {
 impl Hash for DirNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.abspath.hash(state);
+    }
+}
+
+impl std::fmt::Display for DirNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let content = format!(
+            "[DirNode] abspath: {:?}, modify: {:?}, size: {:?}, folders: {:?}, files: {:?}",
+            self.abspath,
+            format_modify_time(self.last_write_time),
+            (self.size as f64 / 1024.0 / 1024.0),
+            self.count_dir,
+            self.count_file
+        );
+        write!(f, "{}", content)
     }
 }
 
@@ -154,4 +198,12 @@ fn get_last_modified(abspath: &PathBuf) -> u128 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis()
+}
+
+#[inline]
+fn format_modify_time(modify_time: u128) -> String {
+    let modify = SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_millis(modify_time as u64))
+        .unwrap();
+    format!("{:?}", modify)
 }
