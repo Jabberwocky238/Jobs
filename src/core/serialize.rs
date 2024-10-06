@@ -3,7 +3,6 @@ use csv::Writer;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::{env, error::Error, fs::File};
 
