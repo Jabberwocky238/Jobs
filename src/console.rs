@@ -1,10 +1,5 @@
 use std::error::Error;
-use std::hash::DefaultHasher;
-use std::hash::Hash;
-use std::hash::Hasher;
 use std::io::Write;
-use std::path::Path;
-use std::rc::Rc;
 
 use crossterm::cursor;
 use crossterm::event::read;
@@ -13,8 +8,6 @@ use crossterm::event::KeyCode;
 use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use crossterm::Command;
-
-use crate::core::JNode;
 
 // struct Console<'a> {
 //     // root: DirInfo,

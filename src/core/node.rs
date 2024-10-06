@@ -1,7 +1,7 @@
-use super::action::{JHash, NodeAction};
-use std::collections::hash_map::DefaultHasher;
+use super::action::NodeAction;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use std::ops::{Sub, SubAssign};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -16,6 +16,7 @@ pub struct FileNode {
     pub abspath: PathBuf,
     pub last_write_time: u128,
     pub size: u64,
+    pub _valid: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -25,39 +26,19 @@ pub struct DirNode {
     pub size: u64,
     pub count_dir: usize,
     pub count_file: usize,
+    pub _valid: bool,
 }
 
-#[macro_export]
-macro_rules! jhash {
-    ($x:expr) => {
-        let mut hasher = DefaultHasher::new();
-        // Handle enum variant
-        if let Some(val) = $x.as_any().downcast_ref::<JNode>() {
-            val.hash(&mut hasher);
-        }
-        // Handle structs
-        else if let Some(val) = $x.as_any().downcast_ref::<FileNode>() {
-            val.hash(&mut hasher);
-        } else if let Some(val) = $x.as_any().downcast_ref::<DirNode>() {
-            val.hash(&mut hasher);
-        } else if let Some(val) = $x.as_any().downcast_ref::<PathBuf>() {
-            val.hash(&mut hasher);
-        } else {
-            panic!("jhash param is unknown");
-        }
-        hasher.finish()
-    };
-}
 
 /// All implementation is down below
 /// -----------------------------------------------------------------------------------------------
 /// -----------------------------------------------------------------------------------------------
 
-impl JHash for JNode {
-    fn hash(&self) -> u64 {
+impl Hash for JNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Self::File(file) => file.hash(),
-            Self::Dir(dir) => dir.hash(),
+            Self::File(file) => file.hash(state),
+            Self::Dir(dir) => dir.hash(state),
         }
     }
 }
@@ -93,11 +74,9 @@ impl NodeAction for JNode {
     }
 }
 
-impl JHash for FileNode {
-    fn hash(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.abspath.hash(&mut hasher);
-        hasher.finish()
+impl Hash for FileNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.abspath.hash(state);
     }
 }
 
@@ -110,6 +89,7 @@ impl NodeAction for FileNode {
             abspath: abspath.to_path_buf(),
             last_write_time,
             size,
+            _valid: true,
         }
     }
 
@@ -129,12 +109,9 @@ impl NodeAction for FileNode {
     }
 }
 
-/// Implement JHash trait for DirNode
-impl JHash for DirNode {
-    fn hash(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.abspath.hash(&mut hasher);
-        hasher.finish()
+impl Hash for DirNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.abspath.hash(state);
     }
 }
 
@@ -151,6 +128,7 @@ impl NodeAction for DirNode {
             size,
             count_dir,
             count_file,
+            _valid: false,
         }
     }
 
