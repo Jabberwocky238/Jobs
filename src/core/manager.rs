@@ -1,12 +1,16 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::fs::File;
+use std::hash::Hash;
 use std::path::PathBuf;
+use std::env;
+use std::time::SystemTime;
+
+use csv::{Reader, Writer};
 
 use crate::jhash;
 
-use super::action::{ManagerAction, NodeAction, Scanner};
-use super::node::JNode;
+use super::action::{ManagerAction, ManagerStorage, NodeAction, Scanner};
+use super::node::{DumpData, JNode, JNodeInfo};
 
 const ROOT_PARENT: u64 = 0;
 
@@ -14,9 +18,9 @@ const ROOT_PARENT: u64 = 0;
 pub struct JManager<H, N> {
     nodes: HashMap<H, N>,
     /// hash, children's hash
-    chash: HashMap<H, HashSet<H>>, 
+    chash: HashMap<H, HashSet<H>>,
     /// hash, parent's hash
-    phash: HashMap<H, H>,          
+    phash: HashMap<H, H>,
 }
 
 impl JManager<u64, JNode> {
@@ -28,11 +32,14 @@ impl JManager<u64, JNode> {
             phash: HashMap::new(),
         }
     }
+    pub fn get_info(&self, node: &u64) -> JNodeInfo {
+        self.nodes.get(node).unwrap().clone().into()
+    }
 }
 
 impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
     fn create_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
-        if self.is_path_exist(path) {
+        if is_path_exist(path) {
             let node = JNode::new(path);
             let h = jhash!(node);
             if self.nodes.contains_key(&h) {
@@ -43,7 +50,10 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
             if is_root(path) {
                 // there is no root
                 self.phash.insert(h, ROOT_PARENT);
-                self.chash.entry(ROOT_PARENT).or_insert_with(HashSet::new).insert(h);
+                self.chash
+                    .entry(ROOT_PARENT)
+                    .or_insert_with(HashSet::new)
+                    .insert(h);
             } else {
                 // check the root, if it is not exist, create it
                 let pp = get_parent_pathbuf(path);
@@ -57,8 +67,8 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
         }
     }
     fn locate_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
-        if self.is_path_exist(path) {
-            let h = pathbuf2hash(path);
+        if is_path_exist(path) {
+            let h = jhash!(path);
             // check whether it is inside the tree
             if !self.nodes.contains_key(&h) {
                 self.create_node(path)?;
@@ -71,7 +81,7 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
     fn delete_node(&mut self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
         if !self.nodes.contains_key(&node) {
             return Err("Node not exist".into());
-        } 
+        }
         let mut to_delete = vec![node.clone()];
 
         while let Some(h) = to_delete.pop() {
@@ -91,7 +101,7 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
         }
         Ok(())
     }
-    
+
     fn update_node(&mut self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
         if !self.nodes.contains_key(&node) {
             return Err("Node not exist".into());
@@ -104,7 +114,7 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
     }
 
     fn get_children(&self, node: &u64) -> Vec<u64> {
-        todo!()
+        self.chash.get(node).unwrap_or(&HashSet::new()).iter().cloned().collect()
     }
 }
 
@@ -123,12 +133,64 @@ impl Scanner<u64> for JManager<u64, JNode> {
     }
 }
 
-#[inline]
-pub fn pathbuf2hash(path: &PathBuf) -> u64 {
-    let abspath = path.canonicalize().unwrap();
-    jhash!(abspath)
+impl ManagerStorage for JManager<u64, JNode> {
+    fn dump(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // 获取用户的 HOME 目录
+        let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
+        // 创建 CSV 文件的完整路径
+        let file_path = format!("{}/example.csv", home_dir);
+        let file = File::create(&file_path)?;
+        let mut wtr = Writer::from_writer(file);
+        for data in self
+            .nodes
+            .values()
+            .map(|node| Into::<DumpData>::into(node.clone()))
+        // TODO: optimize, remove clone
+        {
+            wtr.serialize(&data)?;
+        }
+        wtr.flush()?;
+        println!("CSV file created at: {}", file_path);
+        Ok(())
+    }
+
+    fn load(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // 获取用户的 HOME 目录
+        let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
+        // 创建 CSV 文件的完整路径
+        let file_path = format!("{}/example.csv", home_dir);
+        // 读取文件
+        let file = File::open(&file_path)?;
+        let mut rdr = Reader::from_reader(file);
+
+        let data = rdr
+            .deserialize()
+            .map(|result| result.unwrap())
+            .collect::<Vec<DumpData>>()
+            .into_iter()
+            .map(|node| Into::<JNode>::into(node));
+
+        for node in data {
+            let abspath = node.abspath();
+            // 核实该路径是否存在
+            if !is_path_exist(abspath) {
+                continue;
+            }
+            let h = jhash!(node);
+            if self.nodes.get(&h).is_none() {
+                // 不存在则插入
+                self.create_node(abspath)?;
+            }
+            self.nodes.entry(h).and_modify(|value|{
+                value.load(&node);
+            });
+        }
+        Ok(())
+    }
 }
 
+
+/// 获取父路径
 #[inline]
 fn get_parent_pathbuf(path: &PathBuf) -> PathBuf {
     let mut parent = path.clone();
@@ -136,7 +198,14 @@ fn get_parent_pathbuf(path: &PathBuf) -> PathBuf {
     parent
 }
 
+/// 判断路径是否为根目录
 #[inline]
-fn is_root(path: &PathBuf) -> bool {
+pub fn is_root(path: &PathBuf) -> bool {
     path.parent().is_none()
+}
+
+/// 判断路径是否存在
+#[inline]
+fn is_path_exist(path: &PathBuf) -> bool {
+    path.exists()
 }

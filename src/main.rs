@@ -1,8 +1,7 @@
 use std::error::Error;
-
-mod console;
-mod core;
+use Jobs::run;
 
 fn main() -> Result<(), Box<dyn Error>> {
+    run()?;
     Ok(())
 }

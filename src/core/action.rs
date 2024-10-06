@@ -5,10 +5,10 @@ use std::hash::Hash;
 use std::path::PathBuf;
 use std::error::Error;
 
-pub trait Serialize {
+pub trait ManagerStorage {
     /// serialize and deserialize
     fn dump(&self) -> Result<(), Box<dyn Error>>;
-    fn load(&self) -> Result<(), Box<dyn Error>>;
+    fn load(&mut self) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait Scanner<H> {
@@ -26,17 +26,6 @@ pub trait ManagerAction<N, H> {
     fn update_node(&mut self, node: &H) -> Result<(), Box<dyn Error>>;
     fn get_parent(&self, node: &H) -> H;
     fn get_children(&self, node: &H) -> Vec<H>;
-
-    /// tool functions
-    #[inline]
-    fn to_absolute(&self, current: &PathBuf, path: &PathBuf) -> PathBuf {
-        current.join(path).canonicalize().unwrap()
-    }
-
-    #[inline]
-    fn is_path_exist(&self, path: &PathBuf) -> bool {
-        path.exists()
-    }
 }
 
 pub trait NodeAction 
