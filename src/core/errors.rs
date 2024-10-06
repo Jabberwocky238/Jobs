@@ -1,34 +1,34 @@
-use std::{error::Error, fmt::Display, path::PathBuf};
+use std::error::Error;
+use std::fmt::Display;
+use std::path::PathBuf;
 
 #[derive(Debug)]
-pub struct NoAuthorization(pub PathBuf);
+pub enum JError {
+    NoAuthorization(PathBuf),
+    NotExistingPath(PathBuf),
+    NotDirectory(PathBuf),
+    NotExistingNode(u64),
+    Other(String),
+}
 
-#[derive(Debug)]
-
-pub struct NotExisting(pub PathBuf);
-#[derive(Debug)]
-
-pub struct NotDirectory(pub PathBuf);
-
-
-impl Display for NoAuthorization {
+impl Display for JError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[Jobs Error] No authorization to {}", self.0.display())
+        match self {
+            JError::NoAuthorization(path) => {
+                write!(f, "[Jobs Error] No authorization to {}", path.display())
+            }
+            JError::NotExistingPath(path) => {
+                write!(f, "[Jobs Error] Path {} is Not existing ", path.display())
+            }
+            JError::NotDirectory(path) => {
+                write!(f, "[Jobs Error] {} is Not a directory ", path.display())
+            }
+            JError::NotExistingNode(node_id) => {
+                write!(f, "[Jobs Error] Node {} is Not existing", node_id)
+            }
+            JError::Other(msg) => write!(f, "[Jobs Error] {}", msg),
+        }
     }
 }
 
-impl Display for NotExisting {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[Jobs Error] {} is Not existing ", self.0.display())
-    }
-}
-
-impl Display for NotDirectory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[Jobs Error] {} is Not a directory ", self.0.display())
-    }
-}
-
-impl Error for NoAuthorization {}
-impl Error for NotExisting {}
-impl Error for NotDirectory {}
+impl Error for JError {}

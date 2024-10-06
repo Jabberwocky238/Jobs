@@ -10,6 +10,7 @@ use csv::{Reader, Writer};
 use crate::jhash;
 
 use super::action::{ManagerAction, ManagerStorage, NodeAction, Scanner};
+use super::errors::JError;
 use super::node::{DumpData, JNode, JNodeInfo};
 
 const ROOT_PARENT: u64 = 0;
@@ -59,7 +60,7 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
             let node = JNode::new(path);
             let h = jhash!(node);
             if self.nodes.contains_key(&h) {
-                return Err("Node already exist".into());
+                return Err(JError::NotExistingNode(h).into());
             }
             self.nodes.insert(h, node);
             // judge whether it is root
@@ -79,7 +80,7 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
             }
             Ok(h)
         } else {
-            Err("Path not exist".into())
+            Err(JError::NotExistingPath(path.to_path_buf()).into())
         }
     }
     fn locate_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
@@ -91,14 +92,14 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
             }
             Ok(h)
         } else {
-            Err("Path not exist".into())
+            Err(JError::NotExistingPath(path.to_path_buf()).into())
         }
     }
-    fn delete_node(&mut self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.nodes.contains_key(&node) {
-            return Err("Node not exist".into());
+    fn delete_node(&mut self, node_h: &u64) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.nodes.contains_key(&node_h) {
+            return Err(JError::NotExistingNode(*node_h).into());
         }
-        let mut to_delete = vec![node.clone()];
+        let mut to_delete = vec![node_h.clone()];
 
         while let Some(h) = to_delete.pop() {
             // parent remove child
@@ -118,12 +119,12 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
         Ok(())
     }
     
-    fn update_node(&mut self, node: &u64) -> Result<(), Box<dyn std::error::Error>> {
-        if !self.nodes.contains_key(&node) {
-            return Err("Node not exist".into());
+    fn update_node(&mut self, node_h: &u64) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.nodes.contains_key(&node_h) {
+            return Err(JError::NotExistingNode(*node_h).into());
         }
-        let mut waiting_list = vec![node.clone()];
-        let mut to_update = vec![node.clone()];
+        let mut waiting_list = vec![node_h.clone()];
+        let mut to_update = vec![node_h.clone()];
 
         while let Some(h) = waiting_list.pop() {
             self.scan_folder(&h)?;
