@@ -77,14 +77,14 @@ impl Console {
         for info in infos.iter().filter(|(_, is)| *is) {
             result.push_str(&format!("{}/", info.0));
             cnt += 1;
-            if cnt % 4 == 0 {
+            if cnt % 1 == 0 {
                 result.push('\n');
             }
         }
         for info in infos.iter().filter(|(_, is)| !*is) {
             result.push_str(&format!("{}", info.0));
             cnt += 1;
-            if cnt % 4 == 0 {
+            if cnt % 1 == 0 {
                 result.push('\n');
             }
         }

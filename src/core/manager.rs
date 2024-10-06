@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::env;
 use std::fs::{self, File};
 use std::hash::Hash;
 use std::path::PathBuf;
-use std::env;
 use std::time::SystemTime;
 
 use csv::{Reader, Writer};
@@ -26,7 +26,6 @@ pub struct JManager<H, N> {
 }
 
 impl JManager<u64, JNode> {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         JManager {
             nodes: HashMap::new(),
@@ -118,26 +117,42 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
         }
         Ok(())
     }
-    
+
     fn update_node(&mut self, node_h: &u64) -> Result<(), Box<dyn std::error::Error>> {
         if !self.nodes.contains_key(&node_h) {
             return Err(JError::NotExistingNode(*node_h).into());
         }
-        let mut waiting_list = vec![node_h.clone()];
-        let mut to_update = vec![node_h.clone()];
+        let mut waiting_list = VecDeque::from(vec![node_h.clone()]);
+        let mut to_update = VecDeque::from(vec![node_h.clone()]);
 
-        while let Some(h) = waiting_list.pop() {
+        while let Some(h) = waiting_list.pop_front() {
             self.scan_folder(&h)?;
+            // println!("----------------------");
             let mut chs = self.get_children(&h);
             self.filter_dir(&mut chs);
             waiting_list.extend(chs.clone());
             to_update.extend(chs);
         }
 
-        while let Some(h) = to_update.pop() {
-            let sum_size = self.get_children(&h).iter().map(|&h| self.nodes.get(&h).unwrap().size()).sum();
+        while let Some(h) = to_update.pop_back() {
+            let all = self
+                .get_children(&h)
+                .iter()
+                .map(|&h| self.nodes.get(&h).unwrap())
+                .collect::<Vec<_>>();
+            let sum_size = all.clone().into_iter().map(|v| v.size()).sum();
+            let sum_file = all
+                .clone()
+                .into_iter()
+                .filter(|v| if let JNode::File(_) = v { true } else { false })
+                .count();
+            let sum_dir = all
+                .clone()
+                .into_iter()
+                .filter(|v| if let JNode::Dir(_) = v { true } else { false })
+                .count();
             self.nodes.entry(h).and_modify(|v| {
-                v.set_size(sum_size);   
+                v.set(Some(sum_size), None, None, Some(sum_file), Some(sum_dir));
             });
         }
         Ok(())
@@ -147,7 +162,12 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
     }
 
     fn get_children(&self, node: &u64) -> Vec<u64> {
-        self.chash.get(node).unwrap_or(&HashSet::new()).iter().cloned().collect()
+        self.chash
+            .get(node)
+            .unwrap_or(&HashSet::new())
+            .iter()
+            .cloned()
+            .collect()
     }
 }
 
@@ -161,9 +181,11 @@ impl Scanner<u64> for JManager<u64, JNode> {
         let mut scan_list = vec![h.clone()];
         while let Some(h) = scan_list.pop() {
             self.scan_folder_once(&h)?;
-            let chs = self.get_children(&h);
+            let mut chs = self.get_children(&h);
+            self.filter_dir(&mut chs);
             scan_list.extend(chs);
         }
+        // println!("----------------------");
         Ok(())
     }
 
@@ -177,7 +199,7 @@ impl Scanner<u64> for JManager<u64, JNode> {
             size += metadata.len();
         }
         self.nodes.entry(*h).and_modify(|v| {
-            v.set_size(size);
+            v.set(Some(size), None, None, None, None);
         });
         Ok(())
     }
@@ -187,11 +209,12 @@ impl Scanner<u64> for JManager<u64, JNode> {
         if is_excluded(&path) {
             return self.scan_folder_raw(node);
         }
+        // dbg!("----------------------", path);
         for item in fs::read_dir(path)? {
             let item = item?;
             let path = item.path();
             self.locate_node(&path)?;
-        }           
+        }
         Ok(())
     }
 }
@@ -244,14 +267,13 @@ impl ManagerStorage for JManager<u64, JNode> {
                 // 不存在则插入
                 self.create_node(abspath)?;
             }
-            self.nodes.entry(h).and_modify(|value|{
+            self.nodes.entry(h).and_modify(|value| {
                 value.load(&node);
             });
         }
         Ok(())
     }
 }
-
 
 /// 获取父路径
 #[inline]

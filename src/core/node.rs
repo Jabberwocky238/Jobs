@@ -80,10 +80,40 @@ impl JNode {
             Self::Dir(dir) => dir.size,
         }
     }
-    pub fn set_size(&mut self, size: u64) {
+    pub fn set(
+        &mut self,
+        size: Option<u64>,
+        last_write_time: Option<u128>,
+        _scaned: Option<bool>,
+        count_dir: Option<usize>,
+        count_file: Option<usize>,
+    ) {
         match self {
-            Self::File(file) => file.size = size,
-            Self::Dir(dir) => dir.size = size,
+            Self::File(file) => {
+                if let Some(size) = size {
+                    file.size = size;
+                }
+                if let Some(last_write_time) = last_write_time {
+                    file.last_write_time = last_write_time;
+                }
+            }
+            Self::Dir(dir) => {
+                if let Some(size) = size {
+                    dir.size = size;
+                }
+                if let Some(last_write_time) = last_write_time {
+                    dir.last_write_time = last_write_time;
+                }
+                if let Some(_scaned) = _scaned {
+                    dir._scaned = _scaned;
+                }
+                if let Some(count_dir) = count_dir {
+                    dir.count_dir = count_dir;
+                }
+                if let Some(count_file) = count_file {
+                    dir.count_file = count_file;
+                }
+            }
         }
     }
 
