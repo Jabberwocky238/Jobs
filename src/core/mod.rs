@@ -9,5 +9,7 @@ mod errors;
 use node::JNode;
 
 pub use action::ManagerAction;
+pub use action::ManagerStorage;
+
 pub use node::JNodeInfo;
 pub type JManager = manager::JManager<u64, JNode>;

@@ -62,10 +62,10 @@ impl JNode {
             Self::Dir(dir) => dir._scaned && get_last_modified(&dir.abspath) == dir.last_write_time,
         }
     }
-    pub fn abspath(&self) -> &PathBuf {
+    pub fn abspath(&self) -> PathBuf {
         match self {
-            Self::File(file) => &file.abspath,
-            Self::Dir(dir) => &dir.abspath,
+            JNode::File(file) => file.abspath.canonicalize().unwrap(),
+            JNode::Dir(dir) => dir.abspath.canonicalize().unwrap(),
         }
     }
     pub fn last_write_time(&self) -> u128 {
@@ -218,6 +218,7 @@ impl std::fmt::Display for JNode {
 
 impl NodeAction for JNode {
     fn new(path: &PathBuf) -> Self {
+        // dbg!("[Jobs DEBUG] JNode::new: {:?}", path);
         if path.is_dir() {
             Self::Dir(DirNode::new(path))
         } else {

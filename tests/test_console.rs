@@ -1,3 +1,5 @@
+#![cfg(feature = "console")]
+
 use Jobs::{Console, ManagerAction};
 
 // cargo test --test test_console -- --nocapture
@@ -10,7 +12,7 @@ fn test_console() -> Result<(), Box<dyn std::error::Error>> {
     console.scan()?;
     console.show()?;
     let cur = console.manager.locate_node(&console.current)?;
-    let info = console.manager.get_info(&cur);
+    let info = console.manager.get_info(&cur)?;
     assert_eq!(info.size, 628_816_819); // 628.82MB
     assert_eq!(info.count_file, 432);
     assert_eq!(info.count_dir, 35);
@@ -21,7 +23,7 @@ fn test_console() -> Result<(), Box<dyn std::error::Error>> {
     console.scan()?;
     console.show()?;
     let cur = console.manager.locate_node(&console.current)?;
-    let info = console.manager.get_info(&cur);
+    let info = console.manager.get_info(&cur)?;
     assert_eq!(info.size, 366_390_081); // 366.39MB
     assert_eq!(info.count_file, 315);
     assert_eq!(info.count_dir, 18);
@@ -36,7 +38,7 @@ fn test_console2() -> Result<(), Box<dyn std::error::Error>> {
     console.scan()?;
     console.show()?;
     let cur = console.manager.locate_node(&console.current)?;
-    let info = console.manager.get_info(&cur);
+    let info = console.manager.get_info(&cur)?;
     assert_eq!(info.count_file, 59);
     assert_eq!(info.count_dir, 2);
     Ok(())

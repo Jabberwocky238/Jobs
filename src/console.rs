@@ -38,6 +38,7 @@ impl Console {
         match cmd {
             "cd" => {
                 let path = args.next().unwrap();
+                dbg!(&path);
                 self.cd(path)
             }
             "ls" => self.ls(),
@@ -51,6 +52,7 @@ impl Console {
         }
     }
     pub fn cd(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
+        let path = path[1..path.len()-1].to_string();
         let to = to_absolute(&self.current, &PathBuf::from(path));
         if to.is_dir() {
             self.current = to;
@@ -98,7 +100,7 @@ impl Console {
     }
     pub fn show(&mut self) -> Result<(), Box<dyn Error>> {
         let h: u64 = self.manager.locate_node(&self.current)?;
-        let info = self.manager.get_info(&h);
+        let info = self.manager.get_info(&h)?;
         if info.path.is_dir() {
             println!("{} (dir)", info.name);
             println!("last modified: {:?}", info.last_write_time);
@@ -125,17 +127,19 @@ impl Console {
                 }).collect::<Vec<_>>();
                 // 先打印文件夹，再打印文件
                 for child in children.iter() {
+                    let child = child.as_ref().unwrap();
                     if child.path.is_dir() {
                         chs.push((jhash!(child.path), d + 1, true));
                     }
                 }
                 for child in children.iter() {
+                    let child = child.as_ref().unwrap();
                     if !child.path.is_dir() {
                         chs.push((jhash!(child.path), d + 1, false));
                     }
                 }
             }
-            let info = self.manager.get_info(&h);
+            let info = self.manager.get_info(&h)?;
             println!("{}{}", indent.repeat(d), info.name + (if is_dir { "/" } else { "" } ), );
         }
         Ok(())
@@ -224,8 +228,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
 #[inline]
 fn to_absolute(current: &PathBuf, path: &PathBuf) -> PathBuf {
+    let path = path.canonicalize().unwrap();
+    dbg!(&path);
     if path.is_absolute() {
-        path.clone()
+        path.to_path_buf()
     } else {
         current.join(path).canonicalize().unwrap()
     }

@@ -2,13 +2,14 @@ use std::error::Error;
 use std::fmt::Display;
 use std::path::PathBuf;
 
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum JError {
     NoAuthorization(PathBuf),
     NotExistingPath(PathBuf),
     NotDirectory(PathBuf),
     NotExistingNode(u64),
-    Other(String),
+    NoCacheExist,
 }
 
 impl Display for JError {
@@ -26,7 +27,9 @@ impl Display for JError {
             JError::NotExistingNode(node_id) => {
                 write!(f, "[Jobs Error] Node {} is Not existing", node_id)
             }
-            JError::Other(msg) => write!(f, "[Jobs Error] {}", msg),
+            JError::NoCacheExist => {
+                write!(f, "[Jobs Error] No cache exist")
+            },
         }
     }
 }

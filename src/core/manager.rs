@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use csv::{Reader, Writer};
+use serde::de::Error;
 
 use crate::jhash;
 
@@ -16,6 +17,7 @@ use super::node::{DumpData, JNode, JNodeInfo};
 const ROOT_PARENT: u64 = 0;
 const IGNORE_DIR: [&str; 2] = ["node_modules", ".git"];
 
+// #[cfg(not(debug_assertions))]
 #[derive(Debug)]
 pub struct JManager<H, N> {
     nodes: HashMap<H, N>,
@@ -33,8 +35,11 @@ impl JManager<u64, JNode> {
             phash: HashMap::new(),
         }
     }
-    pub fn get_info(&self, node: &u64) -> JNodeInfo {
-        self.nodes.get(node).unwrap().clone().into()
+    pub fn get_info(&self, node: &u64) -> Result<JNodeInfo, Box<dyn std::error::Error>> {
+        match self.nodes.get(node) {
+            None => Err(JError::NotExistingNode(*node).into()),
+            Some(node) => Ok(node.clone().into()),
+        }
     }
     pub fn print_info(&self, node: &u64) -> String {
         self.nodes.get(node).unwrap().to_string()
@@ -55,6 +60,7 @@ impl JManager<u64, JNode> {
 
 impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
     fn create_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
+        // dbg!("[Jobs DEBUG] create node: {:?}", path);
         if is_path_exist(path) {
             let node = JNode::new(path);
             let h = jhash!(node);
@@ -140,25 +146,31 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
                 .iter()
                 .map(|&h| self.nodes.get(&h).unwrap())
                 .collect::<Vec<_>>();
-            let is_dir = |v: &JNode| {if let JNode::Dir(_) = v { true } else { false }};
-            let is_file = |v: &JNode| {if let JNode::File(_) = v { true } else { false }};
-            let all_dirs = all.clone().into_iter().filter(|arg0: &&JNode| is_dir(*arg0));
+
+            let all_dirs =
+                all.clone()
+                    .into_iter()
+                    .filter(|v| if let JNode::Dir(_) = v { true } else { false });
             let sum_size = all.clone().into_iter().map(|v| v.size()).sum();
-            let sum_file = all.clone().into_iter().map(|v|{
-                match v {
+            let sum_file = all
+                .clone()
+                .into_iter()
+                .map(|v| match v {
                     JNode::File(v) => 1,
                     JNode::Dir(v) => v.count_file,
-                    _ => 0
-                }
-            }).sum();
-            let sum_dir = all.clone().into_iter().map(|v|{
-                match v {
+                    _ => 0,
+                })
+                .sum();
+            let sum_dir = all
+                .clone()
+                .into_iter()
+                .map(|v| match v {
                     JNode::Dir(v) => 1 + v.count_dir,
-                    _ => 0
-                }
-            }).sum();
+                    _ => 0,
+                })
+                .sum();
             self.nodes.entry(h).and_modify(|v| {
-                dbg!(v.abspath(), sum_size, sum_file, sum_dir);
+                // dbg!(v.abspath(), sum_size, sum_file, sum_dir);
                 v.set(Some(sum_size), None, None, Some(sum_dir), Some(sum_file));
             });
         }
@@ -181,7 +193,9 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
 impl Scanner<u64> for JManager<u64, JNode> {
     /// 保证map中有所有节点
     fn scan_folder(&mut self, h: &u64) -> Result<(), Box<dyn std::error::Error>> {
+        // dbg!("dump ok", self.nodes.get(h).unwrap());
         let path = self.nodes.get(h).unwrap().abspath();
+        // dbg!("dump ok", self.nodes.get(h).unwrap());
         if is_excluded(&path) {
             return self.scan_folder_raw(h);
         }
@@ -198,15 +212,22 @@ impl Scanner<u64> for JManager<u64, JNode> {
 
     fn scan_folder_raw(&mut self, h: &u64) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.nodes.get(h).unwrap().abspath();
-        let paths = read_dir_recursive(path)?;
+        let paths = read_dir_recursive(&path)?;
 
         let mut size = 0;
+        let mut count_file = 0;
+        let mut count_dir = 0;
         for path in paths {
             let metadata = fs::metadata(&path)?;
             size += metadata.len();
+            if metadata.is_dir() {
+                count_dir += 1;
+            } else {
+                count_file += 1;
+            }
         }
         self.nodes.entry(*h).and_modify(|v| {
-            v.set(Some(size), None, None, None, None);
+            v.set(Some(size), None, None, Some(count_dir), Some(count_file));
         });
         Ok(())
     }
@@ -248,12 +269,17 @@ impl ManagerStorage for JManager<u64, JNode> {
     }
 
     fn load(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        dbg!("[Jobs DEBUG] Loading cache from CSV file...");
         // 获取用户的 HOME 目录
         let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
         // 创建 CSV 文件的完整路径
         let file_path = format!("{}/example.csv", home_dir);
+        dbg!(&file_path);
         // 读取文件
-        let file = File::open(&file_path)?;
+        let file = match File::open(&file_path) {
+            Ok(file) => file,
+            Err(_) => return Err(JError::NoCacheExist.into()),
+        };
         let mut rdr = Reader::from_reader(file);
 
         let data = rdr
@@ -266,13 +292,13 @@ impl ManagerStorage for JManager<u64, JNode> {
         for node in data {
             let abspath = node.abspath();
             // 核实该路径是否存在
-            if !is_path_exist(abspath) {
+            if !is_path_exist(&abspath) {
                 continue;
             }
             let h = jhash!(node);
             if self.nodes.get(&h).is_none() {
                 // 不存在则插入
-                self.create_node(abspath)?;
+                self.create_node(&abspath)?;
             }
             self.nodes.entry(h).and_modify(|value| {
                 value.load(&node);

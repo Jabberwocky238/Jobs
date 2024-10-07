@@ -2,10 +2,10 @@
 
 
 ## Aiming
-- [ ] Version 1
+- [x] Version 1
   - [x] Scan disk and calculate folder size, reusing existing fsnodes.
   - [x] Serialize and Deserialize
-  - [ ] Console interaction
+  - [x] Console interaction
 - [ ] Version 2
   - [ ] Fuzz search, prefix and suffix trie
   - [ ] Cross platform

@@ -6,4 +6,13 @@ edition = "2021"
 [dependencies]
 csv = "1.1.6"
 serde = { version = "1.0", features = ["derive"] }
-crossterm = "0.22"
+crossterm = { version = "0.22", optional = true }
+
+[features]
+default = ["console"]
+console = ["crossterm"]
+
+[[bench]]
+harness = true # 或者你可以设置为 true，这取决于你的基准测试是如何编写的
+name = "core_manager"
+path = "benches/core_manager.rs"
