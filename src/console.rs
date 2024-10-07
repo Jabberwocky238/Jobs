@@ -15,6 +15,7 @@ use crossterm::Command;
 use crate::jhash;
 use crate::JManager;
 use crate::ManagerAction;
+use crate::ManagerStorage;
 
 pub struct Console {
     pub manager: JManager,
@@ -38,7 +39,6 @@ impl Console {
         match cmd {
             "cd" => {
                 let path = args.next().unwrap();
-                dbg!(&path);
                 self.cd(path)
             }
             "ls" => self.ls(),
@@ -48,6 +48,8 @@ impl Console {
                 let depth = args.next().unwrap_or("3").parse::<usize>().unwrap();
                 self.tree(depth)
             }
+            "dump" => self.manager.dump(),
+            "load" => self.manager.load(),
             _ => Err("Unknown command".into()),
         }
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::action::NodeAction;
-use super::manager::is_root;
+use super::utils::is_root;
 use std::fmt::Debug;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -31,7 +31,7 @@ pub struct DirNode {
     pub _scaned: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
 pub struct DumpData {
     pub abspath: String,
     pub last_write_time: u128,
@@ -64,8 +64,16 @@ impl JNode {
     }
     pub fn abspath(&self) -> PathBuf {
         match self {
-            JNode::File(file) => file.abspath.canonicalize().unwrap(),
-            JNode::Dir(dir) => dir.abspath.canonicalize().unwrap(),
+            JNode::File(file) => {
+                let mut p = file.abspath.canonicalize().unwrap();
+                p.pop();
+                p
+            },
+            JNode::Dir(dir) => {
+                let mut p = dir.abspath.canonicalize().unwrap();
+                p.pop();
+                p
+            },
         }
     }
     pub fn last_write_time(&self) -> u128 {
@@ -408,6 +416,20 @@ impl NodeAction for DirNode {
         format!("DirNode {{ abspath: {:?}, last_write_time: {:?}, size: {:?}, count_dir: {:?}, count_file: {:?} }}", self.abspath, self.last_write_time, self.size, self.count_dir, self.count_file)
     }
 }
+
+/// -----------------------------------------------------------------------------------------------
+/// -----------------------------------------------------------------------------------------------
+/// -----------------------------------------------------------------------------------------------
+
+impl Ord for DumpData {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.abspath.cmp(&other.abspath)
+    }
+}
+
+/// -----------------------------------------------------------------------------------------------
+/// -----------------------------------------------------------------------------------------------
+/// -----------------------------------------------------------------------------------------------
 
 #[inline]
 fn get_last_modified(abspath: &PathBuf) -> u128 {

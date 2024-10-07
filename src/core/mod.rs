@@ -4,6 +4,7 @@ mod action;
 mod node;
 mod manager;
 mod macros;
+mod utils; 
 mod errors;
 
 use node::JNode;

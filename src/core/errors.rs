@@ -9,7 +9,7 @@ pub enum JError {
     NotExistingPath(PathBuf),
     NotDirectory(PathBuf),
     NotExistingNode(u64),
-    NoCacheExist,
+    CacheError,
 }
 
 impl Display for JError {
@@ -22,13 +22,13 @@ impl Display for JError {
                 write!(f, "[Jobs Error] Path {} is Not existing ", path.display())
             }
             JError::NotDirectory(path) => {
-                write!(f, "[Jobs Error] {} is Not a directory ", path.display())
+                write!(f, "[Jobs Error::NotDirectory] {} is Not a directory ", path.display())
             }
             JError::NotExistingNode(node_id) => {
-                write!(f, "[Jobs Error] Node {} is Not existing", node_id)
+                write!(f, "[Jobs Error::NotExistingNode] Node {} is Not existing", node_id)
             }
-            JError::NoCacheExist => {
-                write!(f, "[Jobs Error] No cache exist")
+            JError::CacheError => {
+                write!(f, "[Jobs Error::CacheError] Cache file is used by another process")
             },
         }
     }

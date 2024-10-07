@@ -13,9 +13,15 @@ use crate::jhash;
 use super::action::{ManagerAction, ManagerStorage, NodeAction, Scanner};
 use super::errors::JError;
 use super::node::{DumpData, JNode, JNodeInfo};
+use super::utils::{get_parent_pathbuf, is_root, read_dir_recursive};
 
 const ROOT_PARENT: u64 = 0;
 const IGNORE_DIR: [&str; 2] = ["node_modules", ".git"];
+
+#[inline]
+pub fn is_excluded(path: &PathBuf) -> bool {
+    IGNORE_DIR.contains(&path.file_name().unwrap().to_str().unwrap())
+}
 
 // #[cfg(not(debug_assertions))]
 #[derive(Debug)]
@@ -61,7 +67,7 @@ impl JManager<u64, JNode> {
 impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
     fn create_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
         // dbg!("[Jobs DEBUG] create node: {:?}", path);
-        if is_path_exist(path) {
+        if path.exists() {
             let node = JNode::new(path);
             let h = jhash!(node);
             if self.nodes.contains_key(&h) {
@@ -89,7 +95,7 @@ impl ManagerAction<JNode, u64> for JManager<u64, JNode> {
         }
     }
     fn locate_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
-        if is_path_exist(path) {
+        if path.exists() {
             let h = jhash!(path);
             // check whether it is inside the tree
             if !self.nodes.contains_key(&h) {
@@ -255,10 +261,13 @@ impl ManagerStorage for JManager<u64, JNode> {
         let file_path = format!("{}/example.csv", home_dir);
         let file = File::create(&file_path)?;
         let mut wtr = Writer::from_writer(file);
-        for data in self
+        let mut iter = self
             .nodes
             .values()
             .map(|node| Into::<DumpData>::into(node.clone()))
+            .collect::<Vec<_>>();
+        iter.sort();
+        for data in iter
         // TODO: optimize, remove clone
         {
             wtr.serialize(&data)?;
@@ -269,16 +278,21 @@ impl ManagerStorage for JManager<u64, JNode> {
     }
 
     fn load(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        dbg!("[Jobs DEBUG] Loading cache from CSV file...");
         // 获取用户的 HOME 目录
         let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
         // 创建 CSV 文件的完整路径
         let file_path = format!("{}/example.csv", home_dir);
-        dbg!(&file_path);
+        dbg!("[Jobs DEBUG] Loading cache from CSV file...", &file_path);
         // 读取文件
+        if !PathBuf::from(&file_path).exists() {
+            return Ok(());
+        }
         let file = match File::open(&file_path) {
             Ok(file) => file,
-            Err(_) => return Err(JError::NoCacheExist.into()),
+            Err(_) => {
+                dbg!(&file_path);
+                return Err(JError::CacheError.into());
+            }
         };
         let mut rdr = Reader::from_reader(file);
 
@@ -292,7 +306,7 @@ impl ManagerStorage for JManager<u64, JNode> {
         for node in data {
             let abspath = node.abspath();
             // 核实该路径是否存在
-            if !is_path_exist(&abspath) {
+            if abspath.exists() {
                 continue;
             }
             let h = jhash!(node);
@@ -308,42 +322,3 @@ impl ManagerStorage for JManager<u64, JNode> {
     }
 }
 
-/// 获取父路径
-#[inline]
-fn get_parent_pathbuf(path: &PathBuf) -> PathBuf {
-    let mut parent = path.clone();
-    parent.pop();
-    parent
-}
-
-/// 判断路径是否为根目录
-#[inline]
-pub fn is_root(path: &PathBuf) -> bool {
-    path.parent().is_none()
-}
-
-/// 判断路径是否存在
-#[inline]
-fn is_path_exist(path: &PathBuf) -> bool {
-    path.exists()
-}
-
-#[inline]
-fn is_excluded(path: &PathBuf) -> bool {
-    IGNORE_DIR.contains(&path.file_name().unwrap().to_str().unwrap())
-}
-
-fn read_dir_recursive(path: &PathBuf) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
-    let mut paths = Vec::new();
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() && !is_excluded(&path) {
-            let t = read_dir_recursive(&path)?;
-            paths.extend(t);
-        } else {
-            paths.push(path);
-        }
-    }
-    Ok(paths)
-}

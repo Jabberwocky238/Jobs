@@ -38,6 +38,7 @@ fn warpper(TEMP_DIR: &str) -> Result<(), Box<dyn Error>> {
     let locate = manager.locate_node(&PathBuf::from(format!("{TEMP_DIR}/DIR_1_3")))?;
     manager.update_node(&locate)?;
     let info = manager.get_info(&locate)?;
+    dbg!(&info);
     assert_eq!(info.count_dir, 5);
     assert_eq!(info.count_file, 25);
 
