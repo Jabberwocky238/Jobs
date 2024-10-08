@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [ "main" ] # 只在 main 分支上触发
     tags:
       - 'v*' # 匹配类似 v1.0, v2.0 这样的标签
       - 'draft-*' # 匹配类似 draft-v1.0 这样的标签
@@ -39,6 +40,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: target/x86_64-pc-windows-msvc/debug/Jobs.exe
+        asset_path: target/x86_64-pc-windows-msvc/release/Jobs.exe
         asset_name: Jobs.exe
         asset_content_type: application/octet-stream
