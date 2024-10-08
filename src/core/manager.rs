@@ -154,8 +154,9 @@ impl ManagerAction for JManager<u64, JNode> {
             .get_children_node(&node_h)
             .into_iter()
             .filter(|(v, h)| !v.is_valid())
-            .map(|(v, h)| h)
             .collect::<Vec<_>>();
+        check_update.sort_by_key(|(v, h)| v.path());
+        let mut check_update = check_update.into_iter().map(|(_, h)| h).collect::<Vec<_>>();
         while let Some(h) = check_update.pop() {
             // recursive here!!!
             self.update_node(&h)?;
@@ -285,7 +286,9 @@ impl JManager<u64, JNode> {
         load_queue.reserve(20000);
         while let Some(h) = load_queue.pop() {
             load_queue.extend(self.get_children(&h));
+            check_queue.extend(self.get_children(&h));
         }
+        // dbg!(&load_queue);
         while let Some(h) = check_queue.pop() {
             if !self.nodes.get(&h).unwrap().is_valid() {
                 self.propagate_dirty(&h)?;

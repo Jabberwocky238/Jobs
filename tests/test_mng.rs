@@ -272,7 +272,7 @@ mod file_level {
         mng.update_node(&node_h)?;
         let root = mng.get_info(&node_h)?;
         assert_eq!(root.size(), 133);
-
+        // dbg!("change");
         let file_0: PathBuf = [&path, "A", "B", "C", "file_0.txt"].iter().collect();
         fs::OpenOptions::new()
             .append(true)
@@ -283,7 +283,7 @@ mod file_level {
 
         mng.update_node(&node_h)?;
         let root = mng.get_info(&node_h)?;
-
+        // dbg!("change");
         assert_eq!(root.size(), 141);
         assert_eq!(root.count_file().unwrap(), DEFAULT_FILE_CNT);
         assert_eq!(root.count_dir().unwrap(), DEFAULT_DIR_CNT);
