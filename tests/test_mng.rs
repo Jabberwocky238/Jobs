@@ -204,14 +204,17 @@ mod folder_level {
         let A: PathBuf = [&path, "A"].iter().collect();
         let node_h = mng.locate_node(&A)?;
         mng.update_node(&node_h)?;
+        let root = mng.get_info(&node_h)?;
 
-        let C: PathBuf = [&path, "A", "C"].iter().collect();
-        fs::remove_dir_all(C).unwrap();
+        assert_eq!(root.size(), 133);
+
+        let C: PathBuf = [&path, "A", "B", "C"].iter().collect();
+        fs::remove_dir_all(C)?;
 
         mng.update_node(&node_h)?;
         let root = mng.get_info(&node_h)?;
 
-        assert_eq!(root.size(), 133);
+        assert_ne!(root.size(), 133);
         assert_eq!(root.count_file().unwrap(), DEFAULT_FILE_CNT - 2);
         assert_eq!(root.count_dir().unwrap(), DEFAULT_DIR_CNT - 1);
         Ok(())
@@ -241,6 +244,9 @@ mod file_level {
         let A: PathBuf = [&path, "A"].iter().collect();
         let node_h = mng.locate_node(&A)?;
         mng.update_node(&node_h)?;
+        let root = mng.get_info(&node_h)?;
+
+        assert_eq!(root.size(), 133);
 
         let file_new: PathBuf = [&path, "A", "B", "C", "file_new.txt"].iter().collect();
         fs::write(file_new, b"new file").unwrap();
@@ -295,9 +301,12 @@ mod file_level {
         let A: PathBuf = [&path, "A"].iter().collect();
         let node_h = mng.locate_node(&A)?;
         mng.update_node(&node_h)?;
+        let root = mng.get_info(&node_h)?;
+        
+        assert_eq!(root.size(), 133);
 
         let file_0: PathBuf = [&path, "A", "B", "C", "file_0.txt"].iter().collect();
-        fs::remove_file(file_0).unwrap();
+        fs::remove_file(file_0)?;
 
         mng.update_node(&node_h)?;
         let root = mng.get_info(&node_h)?;
@@ -347,9 +356,9 @@ mod filter_sys {
         let node_h = mng.locate_node(&A)?;
         mng.update_node(&node_h)?;
         let root = mng.get_info(&node_h)?;
-        dbg!(&mng.nodes);
+        // dbg!(&mng.nodes);
 
-        assert_eq!(root.size(), 133);
+        assert_eq!(root.size(), 149);
         assert_eq!(mng.get_node_cnt(), node_cnt + 1);
         assert_eq!(root.count_file().unwrap(), DEFAULT_FILE_CNT + 2);
         assert_eq!(root.count_dir().unwrap(), DEFAULT_DIR_CNT + 2);
@@ -423,7 +432,7 @@ mod persistent {
         let node1 = mng.get_info(&node_h)?;
         mng.dump(&dump_path)?;
 
-        let B2: PathBuf = [&path, "A", "B", "B2"].iter().collect();
+        let B2: PathBuf = [&path, "A", "B2", "C2"].iter().collect();
         fs::remove_dir_all(B2)?;
         let file: PathBuf = [&path, "A", "B", "file_b.txt"].iter().collect();
         fs::remove_file(file)?;
@@ -506,8 +515,8 @@ mod persistent {
         let node1 = mng.get_info(&node_h)?;
         mng.dump(&dump_path)?;
 
-        let B2: PathBuf = [&path, "A", "B", "B2"].iter().collect();
-        let B2333: PathBuf = [&path, "A", "B", "B2333"].iter().collect();
+        let B2: PathBuf = [&path, "A", "B2"].iter().collect();
+        let B2333: PathBuf = [&path, "A", "B2333"].iter().collect();
         fs::rename(B2, B2333)?;
 
         let file: PathBuf = [&path, "A", "B", "C", "file_0.txt"].iter().collect();
@@ -527,8 +536,8 @@ mod persistent {
         let node3 = mng.get_info(&node_h)?;
 
         assert_ne!(node1.size(), node3.size());
-        assert_ne!(node1.count_dir(), node3.count_dir());
-        assert_ne!(node1.count_file(), node3.count_file());
+        assert_eq!(node1.count_dir(), node3.count_dir());
+        assert_eq!(node1.count_file(), node3.count_file());
         Ok(())
     }
 }

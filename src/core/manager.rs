@@ -10,10 +10,10 @@ use serde::de::Error;
 
 use crate::jhash;
 
-use super::action::{JNodeAction, ManagerAction, ManagerStorage, Scanner};
+use super::action::{JNodeAction, ManagerAction, ManagerStorage};
 use super::errors::JError;
 use super::node::{get_last_modified, DumpData, JNode};
-use super::utils::{get_parent_pathbuf, is_root, read_dir_recursive};
+use super::utils::{get_parent_pathbuf, is_root, read_dir_recursive, read_dir_recursive_};
 
 const ROOT_PARENT: u64 = 0;
 const IGNORE_DIR: [&str; 2] = ["node_modules", ".git"];
@@ -52,17 +52,6 @@ impl JManager<u64, JNode> {
         self.nodes.len()
     }
 
-    #[inline]
-    fn filter_dir(&self, list: &mut Vec<u64>) {
-        list.retain(|&x| {
-            let node = self.nodes.get(&x).unwrap();
-            if let JNode::Dir(_) = node {
-                true
-            } else {
-                false
-            }
-        });
-    }
     pub fn get_children_node(&self, node: &u64) -> Vec<(&JNode, u64)> {
         self.chash
             .get(node)
@@ -102,6 +91,7 @@ impl ManagerAction for JManager<u64, JNode> {
             self.phash.insert(h, ph);
             self.chash.entry(ph).or_insert_with(HashSet::new).insert(h);
         }
+        self.propagate_dirty(&h)?;
         Ok(h)
     }
     fn locate_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
@@ -135,14 +125,17 @@ impl ManagerAction for JManager<u64, JNode> {
             }
             self.nodes.remove(&h);
         }
+        self.propagate_dirty(node_h)?;
         Ok(())
     }
 
     /// 1，扫描此节点实际的文件系统，把没见过的子节点插入表内
     ///
-    /// 2，更新过期的子节点
+    /// 2，扫描所有子节点的文件是否合法
     ///
-    /// 3，更新此节点
+    /// 3，更新过期的子节点
+    ///
+    /// 4，更新此节点
     fn update_node(&mut self, node_h: &u64) -> Result<(), Box<dyn std::error::Error>> {
         if !self.nodes.contains_key(&node_h) {
             return Err(JError::NotExistingNode(line!(), *node_h).into());
@@ -151,45 +144,23 @@ impl ManagerAction for JManager<u64, JNode> {
             v.update();
             return Ok(());
         }
-        // let mut waiting_chs = vec![node_h.clone()];
-        let mut check_update = vec![];
-        // dbg!("[Jobs DEBUG] update node:");
+
         // 1，扫描此节点实际的文件系统，把没见过的子节点插入表内
-        // while let Some(h) = waiting_chs.pop() {
-        self.scan_folder_once(&node_h)?;
-        let chs = self.get_children_node(&node_h);
-        chs.iter().for_each(|(v, h)| {
-            // check_update.push(*h);
-            if !v.is_valid() {
-                check_update.push(*h);
-            }
-        });
-        // }
+        self.scan_folder(&node_h)?;
+        // 2, 扫描所有子节点的文件是否合法
+        self.check_file_dirty(&node_h);
         // 2，更新过期的子节点
-        // let mut valid_dir_chs = vec![node_h.clone()];
+        let mut check_update = self
+            .get_children_node(&node_h)
+            .into_iter()
+            .filter(|(v, h)| !v.is_valid())
+            .map(|(v, h)| h)
+            .collect::<Vec<_>>();
         while let Some(h) = check_update.pop() {
-            let v = self.nodes.get(&h).unwrap();
-            // if v.is_dir() {
-            //     valid_dir_chs.push(h);
-            // }
-            if !v.is_valid() {
-                // recursive here!!!
-                self.update_node(&h)?;
-            }
+            // recursive here!!!
+            self.update_node(&h)?;
         }
-        // valid_dir_chs.sort_by_key(|k| {
-        //     self.nodes
-        //         .get(k)
-        //         .unwrap()
-        //         .path()
-        //         .to_path_buf()
-        //         .canonicalize()
-        //         .unwrap()
-        //         .to_string_lossy()
-        //         .to_string()
-        // });
         // 3，更新此节点
-        // while let Some(h) = valid_dir_chs.pop() {
         let all = self.get_children_node(&node_h);
         let iter = all.clone().into_iter();
         let mut sum_size = 0;
@@ -219,13 +190,7 @@ impl ManagerAction for JManager<u64, JNode> {
                 Some(false),
             );
         });
-        let parent_h = self.get_parent(node_h);
-        if parent_h != ROOT_PARENT {
-            self.nodes.entry(parent_h).and_modify(|v| {
-                v.set(None, None, None, None, None, Some(true));
-            });
-        }
-        // }
+        self.propagate_dirty(&node_h)?;
         Ok(())
     }
     fn get_parent(&self, node: &u64) -> u64 {
@@ -242,51 +207,34 @@ impl ManagerAction for JManager<u64, JNode> {
     }
 }
 
-impl Scanner for JManager<u64, JNode> {
-    type H = u64;
-
-    /// 保证map中有所有节点
-    fn scan_folder(&mut self, h: &Self::H) -> Result<(), Box<dyn std::error::Error>> {
-        // dbg!("dump ok", self.nodes.get(h).unwrap());
+impl JManager<u64, JNode> {
+    /// 确保当前节点下所有文件没有修改过，否则就传递脏标
+    /// only add or delete will affect dir modify time
+    fn scan_folder(&mut self, h: &u64) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.nodes.get(h).unwrap().path();
-        // dbg!("dump ok", self.nodes.get(h).unwrap());
-        if is_excluded(&path) {
-            return self.scan_folder_raw(h);
-        }
         let mut scan_list = vec![h.clone()];
         while let Some(h) = scan_list.pop() {
+            if self.nodes.get(&h).unwrap().is_valid() {
+                continue;
+            }
             self.scan_folder_once(&h)?;
             let mut chs = self.get_children(&h);
             chs.retain(|&x| self.nodes.get(&x).unwrap().is_dir());
             scan_list.extend(chs);
         }
-        // println!("----------------------");
         Ok(())
     }
 
-    fn scan_folder_raw(&mut self, h: &Self::H) -> Result<(), Box<dyn std::error::Error>> {
+    fn scan_folder_raw(&mut self, h: &u64) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.nodes.get(h).unwrap().path();
-        let paths = read_dir_recursive(&path)?;
-
-        let mut size = 0;
-        let mut count_file = 0;
-        let mut count_dir = 0;
-        for path in paths {
-            let metadata = fs::metadata(&path)?;
-            size += metadata.len();
-            if metadata.is_dir() {
-                count_dir += 1;
-            } else {
-                count_file += 1;
-            }
-        }
+        let (size, count_file, count_dir) = read_dir_recursive_(&path)?;
         self.nodes.entry(*h).and_modify(|v| {
             v.set(
                 Some(size),
                 None,
                 Some(true),
-                Some(count_dir),
-                Some(count_file),
+                Some(count_dir as usize),
+                Some(count_file as usize),
                 Some(false),
             );
         });
@@ -294,10 +242,13 @@ impl Scanner for JManager<u64, JNode> {
     }
 
     /// 保证map中有所有节点，并且清除不存在的节点
-    fn scan_folder_once(&mut self, node_h: &Self::H) -> Result<(), Box<dyn std::error::Error>> {
+    fn scan_folder_once(&mut self, node_h: &u64) -> Result<(), Box<dyn std::error::Error>> {
         let path = self.nodes.get(node_h).unwrap().path();
         if is_excluded(path) {
             return self.scan_folder_raw(node_h);
+        }
+        if self.nodes.get(node_h).unwrap().is_valid() {
+            return Ok(());
         }
         for item in fs::read_dir(path)? {
             let item = item?;
@@ -305,8 +256,39 @@ impl Scanner for JManager<u64, JNode> {
             self.locate_node(&path)?;
         }
         for ch in self.get_children(node_h) {
-            if !self.nodes.get(&ch).unwrap().path().exists() {
+            let node = self.nodes.get(&ch).unwrap();
+            if !node.path().exists() {
                 self.delete_node(&ch);
+            }
+        }
+        Ok(())
+    }
+
+    fn propagate_dirty(&mut self, node_h: &u64) -> Result<(), Box<dyn std::error::Error>> {
+        let parent_h = self.get_parent(node_h);
+        if parent_h != ROOT_PARENT {
+            // if !self.nodes.get(&parent_h).unwrap().is_valid() {
+            //     return Ok(());
+            // }
+            self.nodes.entry(parent_h).and_modify(|v| {
+                v.set(None, None, None, None, None, Some(true));
+            });
+            self.propagate_dirty(&parent_h)?;
+        }
+        Ok(())
+    }
+
+    fn check_file_dirty(&mut self, node_h: &u64) -> Result<(), Box<dyn std::error::Error>> {
+        let mut check_queue = vec![];
+        let mut load_queue = vec![node_h.clone()];
+        check_queue.reserve(20000);
+        load_queue.reserve(20000);
+        while let Some(h) = load_queue.pop() {
+            load_queue.extend(self.get_children(&h));
+        }
+        while let Some(h) = check_queue.pop() {
+            if !self.nodes.get(&h).unwrap().is_valid() {
+                self.propagate_dirty(&h)?;
             }
         }
         Ok(())
@@ -354,11 +336,7 @@ impl ManagerStorage for JManager<u64, JNode> {
             .map(|node| Into::<JNode>::into(node));
 
         for node in data {
-            let h = jhash!(node);
-            if self.nodes.get(&h).is_none() {
-                // 不存在则插入
-                self.create_node(&node.path())?;
-            }
+            let h = self.locate_node(node.path())?;
             // dbg!(&node);
             self.nodes.entry(h).and_modify(|value| {
                 value.load(&node);

@@ -50,7 +50,8 @@ pub struct DumpData {
 impl JNodeAction for JNode {
     fn name(&self) -> String {
         match self {
-            Self::File(file) => file.abspath
+            Self::File(file) => file
+                .abspath
                 .file_name()
                 .unwrap()
                 .to_str()
@@ -115,7 +116,6 @@ impl JNode {
             Self::Dir(_) => true,
         }
     }
-    /// 节点合法：存在，日期一致
     pub(crate) fn is_valid(&self) -> bool {
         match self {
             Self::File(file) => {
@@ -123,6 +123,7 @@ impl JNode {
                     return false; // node not exists
                 }
                 get_last_modified(&file.abspath) == file.last_write_time
+                    && file.size == fs::metadata(&file.abspath).unwrap().len()
             }
             Self::Dir(dir) => {
                 if fs::metadata(&dir.abspath).is_err() {
@@ -278,7 +279,7 @@ impl std::fmt::Display for FileNode {
             "[FileNode] name: {:?}\nabspath: {:?}\nmodify: {:?}\nsize: {:?}",
             self.abspath.file_name().unwrap(),
             self.abspath,
-            format_modify_time(self.last_write_time),
+            pretty_last_modified(self.last_write_time),
             (self.size as f64 / 1024.0 / 1024.0)
         );
         write!(f, "{}", content)
@@ -351,7 +352,7 @@ impl std::fmt::Display for DirNode {
             "[DirNode] name: {:?}\npath: {:?}\nmodify: {:?}\nsize: {:?}\nfolders: {:?}\nfiles: {:?}",
             self.abspath.file_name().unwrap(),
             self.abspath,
-            format_modify_time(self.last_write_time),
+            pretty_last_modified(self.last_write_time),
             (self.size as f64 / 1024.0 / 1024.0),
             self.count_dir,
             self.count_file
@@ -404,9 +405,22 @@ pub fn get_last_modified(abspath: &PathBuf) -> u128 {
         .as_millis()
 }
 
+
 #[inline]
-pub fn format_modify_time(modify_time: u128) -> SystemTime {
+pub fn last_modify_systemtime(modify_time: u128) -> SystemTime {
     SystemTime::UNIX_EPOCH
         .checked_add(Duration::from_millis(modify_time as u64))
         .unwrap()
+}
+
+#[inline]
+pub fn pretty_last_modified(modify_time: u128) -> String {
+    let msec = Duration::from_millis(modify_time as u64);
+    let year = msec.as_secs() / 31536000;
+    let month = (msec.as_secs() % 31536000) / 2592000;
+    let day = (msec.as_secs() % 2592000) / 86400;
+    let hour = (msec.as_secs() % 86400) / 3600;
+    let minute = (msec.as_secs() % 3600) / 60;
+    let second = msec.as_secs() % 60;
+    format!("{}-{}-{} {}:{}:{}", year, month, day, hour, minute, second)
 }

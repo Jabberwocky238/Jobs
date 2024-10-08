@@ -12,14 +12,6 @@ pub trait ManagerStorage {
     fn load(&mut self, path: &PathBuf) -> Result<(), Box<dyn Error>>;
 }
 
-/// scan the real filesystem and add new node to the manager
-pub trait Scanner {
-    type H;
-    
-    fn scan_folder(&mut self, node: &Self::H) -> Result<(), Box<dyn Error>>;
-    fn scan_folder_raw(&mut self, node: &Self::H) -> Result<(), Box<dyn Error>>;
-    fn scan_folder_once(&mut self, node: &Self::H) -> Result<(), Box<dyn Error>>;
-}
 
 /// only make sure the node is existing in the manager
 /// dont calculate the exact number
