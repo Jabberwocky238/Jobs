@@ -2,7 +2,6 @@ use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::hash::Hash;
 
 use crossterm::cursor;
 use crossterm::event::read;
@@ -12,8 +11,8 @@ use crossterm::terminal::Clear;
 use crossterm::terminal::ClearType;
 use crossterm::Command;
 
-use crate::jhash;
 use crate::JManager;
+use crate::JNodeAction;
 use crate::ManagerAction;
 use crate::ManagerStorage;
 
@@ -54,7 +53,7 @@ impl Console {
         }
     }
     pub fn cd(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let path = path[1..path.len()-1].to_string();
+        let path = path[1..path.len() - 1].to_string();
         let to = to_absolute(&self.current, &PathBuf::from(path));
         if to.is_dir() {
             self.current = to;
@@ -103,46 +102,35 @@ impl Console {
     pub fn show(&mut self) -> Result<(), Box<dyn Error>> {
         let h: u64 = self.manager.locate_node(&self.current)?;
         let info = self.manager.get_info(&h)?;
-        if info.path.is_dir() {
-            println!("{} (dir)", info.name);
-            println!("last modified: {:?}", info.last_write_time);
-            println!("size: {}", info.size);
-            println!("{} files and {} directories", info.count_file, info.count_dir);
-        } else {
-            println!("{} (file)", info.name);
-            println!("last modified: {:?}", info.last_write_time);
-            println!("size: {}", info.size);
-        }
+        println!("{}", info);
         Ok(())
     }
     pub fn tree(&mut self, depth: usize) -> Result<(), Box<dyn Error>> {
         let indent = format!("|{}", " ".repeat(TREE_INDENT));
         let mut chs = vec![];
         let h = self.manager.locate_node(&self.current)?;
-        chs.push((h, 0, true));
-        while !chs.is_empty() {
-            let (h, d, is_dir) = chs.pop().unwrap();
+        chs.push((h, 0));
+        while let Some((h, d)) = chs.pop() {
             if d < depth {
-                let children = self.manager.get_children(&h);
-                let children = children.iter().map(|h|{
-                    self.manager.get_info(h)
-                }).collect::<Vec<_>>();
+                let children = self.manager.get_children_node(&h);
                 // 先打印文件夹，再打印文件
-                for child in children.iter() {
-                    let child = child.as_ref().unwrap();
-                    if child.path.is_dir() {
-                        chs.push((jhash!(child.path), d + 1, true));
+                for (child, h) in children.iter() {
+                    if child.is_dir() {
+                        chs.push((*h, d + 1));
                     }
                 }
-                for child in children.iter() {
-                    let child = child.as_ref().unwrap();
-                    if !child.path.is_dir() {
-                        chs.push((jhash!(child.path), d + 1, false));
+                for (child, h) in children.iter() {
+                    if !child.is_dir() {
+                        chs.push((*h, d + 1));
                     }
                 }
             }
             let info = self.manager.get_info(&h)?;
-            println!("{}{}", indent.repeat(d), info.name + (if is_dir { "/" } else { "" } ), );
+            println!(
+                "{}{}",
+                indent.repeat(d),
+                info.name() + (if info.is_dir() { "/" } else { "" }),
+            );
         }
         Ok(())
     }

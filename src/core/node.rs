@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::action::NodeAction;
+use super::action::JNodeAction;
 use super::utils::is_root;
 use std::fmt::Debug;
 use std::fs;
@@ -41,54 +41,97 @@ pub struct DumpData {
     pub _scaned: bool,
 }
 
-#[derive(Debug)]
-pub struct JNodeInfo {
-    pub name: String,
-    pub path: PathBuf,
-    pub last_write_time: SystemTime,
-    pub size: u64,
-    pub count_dir: u64,
-    pub count_file: u64,
-}
-
 /// All implementation is down below
 /// -----------------------------------------------------------------------------------------------
 /// -----------------------------------------------------------------------------------------------
 
-impl JNode {
-    pub fn is_valid(&self) -> bool {
+impl JNodeAction for JNode {
+    fn name(&self) -> String {
         match self {
-            Self::File(file) => get_last_modified(&file.abspath) == file.last_write_time,
-            Self::Dir(dir) => dir._scaned && get_last_modified(&dir.abspath) == dir.last_write_time,
+            Self::File(file) => file.abspath
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
+            Self::Dir(dir) => dir
+                .abspath
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
         }
     }
-    pub fn abspath(&self) -> PathBuf {
+
+    fn path(&self) -> &PathBuf {
         match self {
-            JNode::File(file) => {
-                let mut p = file.abspath.canonicalize().unwrap();
-                p.pop();
-                p
-            },
-            JNode::Dir(dir) => {
-                let mut p = dir.abspath.canonicalize().unwrap();
-                p.pop();
-                p
-            },
+            JNode::File(file) => &file.abspath,
+            JNode::Dir(dir) => &dir.abspath,
         }
     }
-    pub fn last_write_time(&self) -> u128 {
+    fn last_modified(&self) -> u128 {
         match self {
             Self::File(file) => file.last_write_time,
             Self::Dir(dir) => dir.last_write_time,
         }
     }
-    pub fn size(&self) -> u64 {
+    fn size(&self) -> u64 {
         match self {
             Self::File(file) => file.size,
             Self::Dir(dir) => dir.size,
         }
     }
-    pub fn set(
+
+    fn count_dir(&self) -> Option<u64> {
+        match self {
+            Self::File(_) => None,
+            Self::Dir(dir) => Some(dir.count_dir as u64),
+        }
+    }
+
+    fn count_file(&self) -> Option<u64> {
+        match self {
+            Self::File(_) => None,
+            Self::Dir(dir) => Some(dir.count_file as u64),
+        }
+    }
+}
+
+impl JNode {
+    pub(crate) fn new(path: &PathBuf) -> Self {
+        // dbg!("[Jobs DEBUG] JNode::new: {:?}", path);
+        if path.is_dir() {
+            Self::Dir(DirNode::new(path))
+        } else {
+            Self::File(FileNode::new(path))
+        }
+    }
+    pub(crate) fn is_dir(&self) -> bool {
+        match self {
+            Self::File(_) => false,
+            Self::Dir(_) => true,
+        }
+    }
+    /// 节点合法：存在，日期一致
+    pub(crate) fn is_valid(&self) -> bool {
+        match self {
+            Self::File(file) => {
+                if fs::metadata(&file.abspath).is_err() {
+                    return false; // node not exists
+                }
+                get_last_modified(&file.abspath) == file.last_write_time
+            }
+            Self::Dir(dir) => {
+                if fs::metadata(&dir.abspath).is_err() {
+                    return false; // node not exists
+                }
+                dir._scaned && get_last_modified(&dir.abspath) == dir.last_write_time
+            }
+        }
+    }
+
+    pub(crate) fn set(
         &mut self,
         size: Option<u64>,
         last_write_time: Option<u128>,
@@ -126,7 +169,7 @@ impl JNode {
     }
 
     /// for Dumper
-    pub fn load(&mut self, dumped: &JNode) {
+    pub(crate) fn load(&mut self, dumped: &JNode) {
         // TODO: advanced check for last dump date
         match (self, dumped) {
             (JNode::File(me), JNode::File(dumped)) => {
@@ -147,39 +190,6 @@ impl JNode {
                 me.count_file = dumped.count_file;
             }
             _ => panic!("Node type mismatch"),
-        }
-    }
-}
-
-impl Into<JNodeInfo> for JNode {
-    fn into(self) -> JNodeInfo {
-        let name = if is_root(&self.abspath()) {
-            self.abspath().to_string_lossy().to_string()
-        } else {
-            self.abspath()
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_string()
-        };
-        match self {
-            Self::File(file) => JNodeInfo {
-                name,
-                path: file.abspath,
-                last_write_time: format_modify_time(file.last_write_time),
-                size: file.size,
-                count_dir: 0,
-                count_file: 1,
-            },
-            Self::Dir(dir) => JNodeInfo {
-                name,
-                path: dir.abspath,
-                last_write_time: format_modify_time(dir.last_write_time),
-                size: dir.size,
-                count_dir: dir.count_dir as u64,
-                count_file: dir.count_file as u64,
-            },
         }
     }
 }
@@ -220,38 +230,6 @@ impl std::fmt::Display for JNode {
         match self {
             Self::File(file) => write!(f, "{}", file),
             Self::Dir(dir) => write!(f, "{}", dir),
-        }
-    }
-}
-
-impl NodeAction for JNode {
-    fn new(path: &PathBuf) -> Self {
-        // dbg!("[Jobs DEBUG] JNode::new: {:?}", path);
-        if path.is_dir() {
-            Self::Dir(DirNode::new(path))
-        } else {
-            Self::File(FileNode::new(path))
-        }
-    }
-
-    fn verify(&self) -> bool {
-        match self {
-            Self::File(file) => file.verify(),
-            Self::Dir(dir) => dir.verify(),
-        }
-    }
-
-    fn exists(&self) -> bool {
-        match self {
-            Self::File(file) => file.exists(),
-            Self::Dir(dir) => dir.exists(),
-        }
-    }
-
-    fn print(&self) -> String {
-        match self {
-            Self::File(file) => file.print(),
-            Self::Dir(dir) => dir.print(),
         }
     }
 }
@@ -305,7 +283,7 @@ impl std::fmt::Display for FileNode {
     }
 }
 
-impl NodeAction for FileNode {
+impl FileNode {
     fn new(abspath: &PathBuf) -> Self {
         let metadata = fs::metadata(&abspath).unwrap();
         let last_write_time = get_last_modified(&abspath);
@@ -316,20 +294,10 @@ impl NodeAction for FileNode {
             size,
         }
     }
-
-    fn verify(&self) -> bool {
-        get_last_modified(&self.abspath) == self.last_write_time
-    }
-
-    fn exists(&self) -> bool {
-        self.abspath.exists()
-    }
-
-    fn print(&self) -> String {
-        format!(
-            "FileNode {{ abspath: {:?}, last_write_time: {:?}, size: {:?} }}",
-            self.abspath, self.last_write_time, self.size
-        )
+    pub fn update(&mut self) {
+        let metadata = fs::metadata(&self.abspath).unwrap();
+        self.last_write_time = get_last_modified(&self.abspath);
+        self.size = metadata.len();
     }
 }
 
@@ -388,7 +356,7 @@ impl std::fmt::Display for DirNode {
 }
 
 /// Implement NodeAction trait for DirNode
-impl NodeAction for DirNode {
+impl DirNode {
     fn new(abspath: &PathBuf) -> Self {
         let metadata = fs::metadata(&abspath).unwrap();
         let last_write_time = get_last_modified(&abspath);
@@ -402,18 +370,6 @@ impl NodeAction for DirNode {
             count_file,
             _scaned: false,
         }
-    }
-
-    fn verify(&self) -> bool {
-        get_last_modified(&self.abspath) == self.last_write_time
-    }
-
-    fn exists(&self) -> bool {
-        self.abspath.exists()
-    }
-
-    fn print(&self) -> String {
-        format!("DirNode {{ abspath: {:?}, last_write_time: {:?}, size: {:?}, count_dir: {:?}, count_file: {:?} }}", self.abspath, self.last_write_time, self.size, self.count_dir, self.count_file)
     }
 }
 
@@ -432,7 +388,7 @@ impl Ord for DumpData {
 /// -----------------------------------------------------------------------------------------------
 
 #[inline]
-fn get_last_modified(abspath: &PathBuf) -> u128 {
+pub fn get_last_modified(abspath: &PathBuf) -> u128 {
     fs::metadata(abspath)
         .unwrap()
         .modified()

@@ -8,7 +8,7 @@ pub enum JError {
     NoAuthorization(PathBuf),
     NotExistingPath(PathBuf),
     NotDirectory(PathBuf),
-    NotExistingNode(u64),
+    NotExistingNode(u32, u64),
     CacheError,
 }
 
@@ -24,8 +24,8 @@ impl Display for JError {
             JError::NotDirectory(path) => {
                 write!(f, "[Jobs Error::NotDirectory] {} is Not a directory ", path.display())
             }
-            JError::NotExistingNode(node_id) => {
-                write!(f, "[Jobs Error::NotExistingNode] Node {} is Not existing", node_id)
+            JError::NotExistingNode(line, node_id) => {
+                write!(f, "[Jobs Error::NotExistingNode: line {}] Node {} is Not existing", line, node_id)
             }
             JError::CacheError => {
                 write!(f, "[Jobs Error::CacheError] Cache file is used by another process")
