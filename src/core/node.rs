@@ -268,7 +268,8 @@ impl Into<DumpData> for FileNode {
 impl std::fmt::Display for FileNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let content = format!(
-            "[FileNode] abspath: {:?}, modify: {:?}, size: {:?}",
+            "[FileNode] name: {:?}\nabspath: {:?}\nmodify: {:?}\nsize: {:?}",
+            self.abspath.file_name().unwrap(),
             self.abspath,
             format_modify_time(self.last_write_time),
             (self.size as f64 / 1024.0 / 1024.0)
@@ -338,7 +339,8 @@ impl Hash for DirNode {
 impl std::fmt::Display for DirNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let content = format!(
-            "[DirNode] abspath: {:?}, modify: {:?}, size: {:?}, folders: {:?}, files: {:?}",
+            "[DirNode] name: {:?}\npath: {:?}\nmodify: {:?}\nsize: {:?}\nfolders: {:?}\nfiles: {:?}",
+            self.abspath.file_name().unwrap(),
             self.abspath,
             format_modify_time(self.last_write_time),
             (self.size as f64 / 1024.0 / 1024.0),

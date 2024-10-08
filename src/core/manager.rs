@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -334,7 +334,7 @@ impl ManagerStorage for JManager<u64, JNode> {
         if !PathBuf::from(&file_path).exists() {
             return Ok(());
         }
-        let file = match File::open(&file_path) {
+        let file = match OpenOptions::new().create(true).append(true).open(&file_path) {
             Ok(file) => file,
             Err(_) => {
                 dbg!(&file_path);

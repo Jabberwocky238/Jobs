@@ -1,4 +1,3 @@
-#![cfg(feature = "console")]
 
 use std::{error::Error, fs, io::Write, path::PathBuf};
 
@@ -22,13 +21,11 @@ fn create_dir_file(dir_path: &str, count: usize) {
     }
 }
 
+#[allow(non_snake_case)]
 #[test]
 fn test_manager() -> Result<(), Box<dyn Error>> {
-    #[allow(non_snake_case)]
     let TEMP_DIR = env!("TEMP");
-    #[allow(non_snake_case)]
     let TEMP_DIR = format!("{TEMP_DIR}/Jobs_test_manager");
-    #[allow(non_snake_case)]
     let TEMP_DIR = TEMP_DIR.as_str();
     create_dir(TEMP_DIR);
 
