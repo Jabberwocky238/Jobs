@@ -173,16 +173,10 @@ impl JNode {
         // TODO: advanced check for last dump date
         match (self, dumped) {
             (JNode::File(me), JNode::File(dumped)) => {
-                if dumped.last_write_time <= me.last_write_time {
-                    return;
-                }
                 me.last_write_time = dumped.last_write_time;
                 me.size = dumped.size;
             }
             (JNode::Dir(me), JNode::Dir(dumped)) => {
-                if dumped.last_write_time <= me.last_write_time {
-                    return;
-                }
                 me._scaned = dumped._scaned;
                 me.last_write_time = dumped.last_write_time;
                 me.size = dumped.size;

@@ -18,11 +18,20 @@ fn create_dir_file(dir_path: &str, count: usize) {
     for i in 0..count {
         let file_path = format!("{}/file_{}.txt", dir_path, i);
         let mut file = fs::File::create(&file_path).unwrap();
-        file.write_all(b"hellow word").unwrap();
+        file.write_all(b"hellow word78787878").unwrap();
     }
 }
 
-fn warpper(TEMP_DIR: &str) -> Result<(), Box<dyn Error>> {
+#[test]
+fn test_manager() -> Result<(), Box<dyn Error>> {
+    #[allow(non_snake_case)]
+    let TEMP_DIR = env!("TEMP");
+    #[allow(non_snake_case)]
+    let TEMP_DIR = format!("{TEMP_DIR}/Jobs_test_manager");
+    #[allow(non_snake_case)]
+    let TEMP_DIR = TEMP_DIR.as_str();
+    create_dir(TEMP_DIR);
+
     dbg!(TEMP_DIR);
 
     for i in 0..5 {
@@ -54,11 +63,11 @@ fn warpper(TEMP_DIR: &str) -> Result<(), Box<dyn Error>> {
 
     // dump，
     manager.dump()?;
-    
+
     // 添加一个文件夹，删掉一个文件夹，
     fs::remove_dir_all(format!("{TEMP_DIR}/DIR_1_4"))?;
     create_dir_file(&format!("{TEMP_DIR}/DIR_new"), 5);
-    
+
     // scan，@
     let locate = manager.locate_node(&PathBuf::from(TEMP_DIR))?;
     // dbg!("load");
@@ -70,8 +79,10 @@ fn warpper(TEMP_DIR: &str) -> Result<(), Box<dyn Error>> {
     assert_eq!(info.count_file().unwrap(), 105);
 
     // 改变文件内容
-    let mut file = fs::File::create(format!("{TEMP_DIR}/DIR_1_1/DIR_2_0/file_1.txt"))?;
-    file.write_all(b"hello world")?;
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(format!("{TEMP_DIR}/DIR_1_1/DIR_2_0/file_1.txt"))?;
+    file.write(b"hello world")?;
     file.flush()?;
     file.sync_all()?;
 
@@ -82,18 +93,17 @@ fn warpper(TEMP_DIR: &str) -> Result<(), Box<dyn Error>> {
     let info = manager.get_info(&locate)?;
     assert_eq!(info.count_dir().unwrap(), 25);
     assert_eq!(info.count_file().unwrap(), 105);
-    // assert_eq!(info.size(), size + 11);
+    assert_eq!(info.size(), size + 11);
 
     // 删掉旧的一个文件夹
-    // dbg!("load");
     fs::remove_dir_all(format!("{TEMP_DIR}/DIR_1_3"))?;
 
     // load，@
-    // dbg!("load");
     manager.load()?;
     let locate = manager.locate_node(&PathBuf::from(TEMP_DIR))?;
+    manager.update_node(&locate)?;
     let info = manager.get_info(&locate)?;
-    assert_eq!(info.count_dir().unwrap(), 20);
+    assert_eq!(info.count_dir().unwrap(), 19);
     assert_eq!(info.count_file().unwrap(), 80);
 
     // dump。
@@ -104,23 +114,8 @@ fn warpper(TEMP_DIR: &str) -> Result<(), Box<dyn Error>> {
     manager.load()?;
     let locate = manager.locate_node(&PathBuf::from(TEMP_DIR))?;
     let info = manager.get_info(&locate)?;
-    assert_eq!(info.count_dir().unwrap(), 20);
+    assert_eq!(info.count_dir().unwrap(), 19);
     assert_eq!(info.count_file().unwrap(), 80);
-
-    Ok(())
-}
-
-#[test]
-fn test_manager() -> Result<(), Box<dyn Error>> {
-    #[allow(non_snake_case)]
-    let TEMP_DIR = env!("TEMP");
-    #[allow(non_snake_case)]
-    let TEMP_DIR = format!("{TEMP_DIR}/Jobs_test_manager");
-    #[allow(non_snake_case)]
-    let TEMP_DIR = TEMP_DIR.as_str();
-    create_dir(TEMP_DIR);
-
-    warpper(TEMP_DIR)?;
 
     // remove
     fs::remove_dir_all(TEMP_DIR)?;

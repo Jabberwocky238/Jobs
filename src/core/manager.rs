@@ -329,7 +329,7 @@ impl ManagerStorage for JManager<u64, JNode> {
         let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
         // 创建 CSV 文件的完整路径
         let file_path = format!("{}/example.csv", home_dir);
-        dbg!("[Jobs DEBUG] Loading cache from CSV file...", &file_path);
+        // dbg!("[Jobs DEBUG] Loading cache from CSV file...", &file_path);
         // 读取文件
         if !PathBuf::from(&file_path).exists() {
             return Ok(());
@@ -352,15 +352,12 @@ impl ManagerStorage for JManager<u64, JNode> {
             .map(|node| Into::<JNode>::into(node));
 
         for node in data {
-            // 核实该路径是否存在
-            if node.path().exists() {
-                continue;
-            }
             let h = jhash!(node);
             if self.nodes.get(&h).is_none() {
                 // 不存在则插入
                 self.create_node(&node.path())?;
             }
+            // dbg!(&node);
             self.nodes.entry(h).and_modify(|value| {
                 value.load(&node);
             });

@@ -32,13 +32,13 @@ impl Console {
     pub fn prompt(&self) -> String {
         format!("[Jobs]@{} >> ", self.current.display())
     }
-    pub fn exec(&mut self, cmd: &str) -> Result<(), Box<dyn Error>> {
-        let mut args = cmd.split_whitespace();
+    pub fn exec(&mut self, raw_cmd: &str) -> Result<(), Box<dyn Error>> {
+        let mut args = raw_cmd.split_whitespace();
         let cmd = args.next().unwrap();
         match cmd {
             "cd" => {
-                let path = args.next().unwrap();
-                self.cd(path)
+                let path = parse_cd(&raw_cmd.to_owned())?;
+                self.cd(&path)
             }
             "ls" => self.ls(),
             "scan" => self.scan(),
@@ -225,4 +225,25 @@ fn to_absolute(current: &PathBuf, path: &PathBuf) -> PathBuf {
     } else {
         current.join(path).canonicalize().unwrap()
     }
+}
+
+fn parse_cd(buffer: &String) -> Result<String, std::io::Error> {
+    let buffer = buffer[3..].trim().to_string();
+    let mut path = String::new();
+    let mut yinhao = false;
+    for c in buffer.chars() {
+        if c == '"' {
+            yinhao = !yinhao;
+        }
+        if yinhao {
+            path.push(c);
+        } else {
+            if c.is_whitespace() {
+                break;
+            } else {
+                path.push(c);
+            }
+        }
+    }
+    Ok(path)
 }
