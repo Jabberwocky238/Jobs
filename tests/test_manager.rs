@@ -1,5 +1,5 @@
 
-use std::{error::Error, fs, io::Write, path::PathBuf};
+use std::{env, error::Error, fs, io::Write, path::PathBuf};
 
 use Jobs::{JManager, JNodeAction, ManagerAction, ManagerStorage};
 
@@ -27,6 +27,10 @@ fn test_manager() -> Result<(), Box<dyn Error>> {
     let TEMP_DIR = env!("TEMP");
     let TEMP_DIR = format!("{TEMP_DIR}/Jobs_test_manager");
     let TEMP_DIR = TEMP_DIR.as_str();
+
+    let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
+    let file_path = PathBuf::from(home_dir).join("example.csv");
+    
     create_dir(TEMP_DIR);
 
     dbg!(TEMP_DIR);
@@ -59,7 +63,7 @@ fn test_manager() -> Result<(), Box<dyn Error>> {
     assert_eq!(info.count_file().unwrap(), 125);
 
     // dump，
-    manager.dump()?;
+    manager.dump(&file_path)?;
 
     // 添加一个文件夹，删掉一个文件夹，
     fs::remove_dir_all(format!("{TEMP_DIR}/DIR_1_4"))?;
@@ -96,7 +100,7 @@ fn test_manager() -> Result<(), Box<dyn Error>> {
     fs::remove_dir_all(format!("{TEMP_DIR}/DIR_1_3"))?;
 
     // load，@
-    manager.load()?;
+    manager.load(&file_path)?;
     let locate = manager.locate_node(&PathBuf::from(TEMP_DIR))?;
     manager.update_node(&locate)?;
     let info = manager.get_info(&locate)?;
@@ -104,11 +108,11 @@ fn test_manager() -> Result<(), Box<dyn Error>> {
     assert_eq!(info.count_file().unwrap(), 80);
 
     // dump。
-    manager.dump()?;
+    manager.dump(&file_path)?;
 
     // 重新创建manager，load，@，
     let mut manager = JManager::new();
-    manager.load()?;
+    manager.load(&file_path)?;
     let locate = manager.locate_node(&PathBuf::from(TEMP_DIR))?;
     let info = manager.get_info(&locate)?;
     assert_eq!(info.count_dir().unwrap(), 19);

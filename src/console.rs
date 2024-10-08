@@ -1,3 +1,4 @@
+use std::env;
 use std::error::Error;
 use std::fs;
 use std::io::Write;
@@ -35,6 +36,9 @@ impl Console {
     pub fn exec(&mut self, raw_cmd: &str) -> Result<(), Box<dyn Error>> {
         let mut args = raw_cmd.split_whitespace();
         let cmd = args.next().unwrap();
+        
+        let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
+        let file_path = PathBuf::from(home_dir).join("example.csv");
         match cmd {
             "cd" => {
                 let path = parse_cd(&raw_cmd.to_owned())?;
@@ -47,8 +51,8 @@ impl Console {
                 let depth = args.next().unwrap_or("3").parse::<usize>().unwrap();
                 self.tree(depth)
             }
-            "dump" => self.manager.dump(),
-            "load" => self.manager.load(),
+            "dump" => self.manager.dump(&file_path),
+            "load" => self.manager.load(&file_path),
             _ => Err("Unknown command".into()),
         }
     }

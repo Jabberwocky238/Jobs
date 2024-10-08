@@ -48,6 +48,11 @@ impl JManager<u64, JNode> {
         }
     }
 
+    #[cfg(debug_assertions)]
+    pub fn get_node_cnt(&self) -> usize {
+        self.nodes.len()
+    }
+
     #[inline]
     fn filter_dir(&self, list: &mut Vec<u64>) {
         list.retain(|&x| {
@@ -303,9 +308,7 @@ impl Scanner<u64> for JManager<u64, JNode> {
 }
 
 impl ManagerStorage for JManager<u64, JNode> {
-    fn dump(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
-        let file_path = format!("{}/example.csv", home_dir);
+    fn dump(&self, file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         let file = File::create(&file_path)?;
         let mut wtr = Writer::from_writer(file);
         let mut iter = self
@@ -320,11 +323,10 @@ impl ManagerStorage for JManager<u64, JNode> {
             wtr.serialize(&data)?;
         }
         wtr.flush()?;
-        println!("CSV file created at: {}", file_path);
         Ok(())
     }
 
-    fn load(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn load(&mut self, file_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         // 获取用户的 HOME 目录
         let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
         // 创建 CSV 文件的完整路径

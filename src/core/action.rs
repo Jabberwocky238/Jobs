@@ -8,8 +8,8 @@ use std::error::Error;
 /// aka serialization and deserialization
 pub trait ManagerStorage {
     /// serialize and deserialize
-    fn dump(&self) -> Result<(), Box<dyn Error>>;
-    fn load(&mut self) -> Result<(), Box<dyn Error>>;
+    fn dump(&self, path: &PathBuf) -> Result<(), Box<dyn Error>>;
+    fn load(&mut self, path: &PathBuf) -> Result<(), Box<dyn Error>>;
 }
 
 /// scan the real filesystem and add new node to the manager
