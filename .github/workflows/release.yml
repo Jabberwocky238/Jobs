@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*' # 匹配类似 v1.0, v2.0 这样的标签
+      - 'draft-*' # 匹配类似 draft-v1.0 这样的标签
 
 jobs:
   build:
