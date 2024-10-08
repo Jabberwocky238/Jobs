@@ -28,7 +28,7 @@ pub struct DirNode {
     pub size: u64,
     pub count_dir: usize,
     pub count_file: usize,
-    pub _scaned: bool,
+    // pub _scaned: bool,
     pub _dirty: bool,
 }
 
@@ -39,7 +39,7 @@ pub struct DumpData {
     pub size: u64,
     pub count_dir: usize,
     pub count_file: usize,
-    pub _scaned: bool,
+    // pub _scaned: bool,
     pub _dirty: bool,
 }
 
@@ -129,7 +129,7 @@ impl JNode {
                 if fs::metadata(&dir.abspath).is_err() {
                     return false; // node not exists
                 }
-                !dir._dirty && dir._scaned && get_last_modified(&dir.abspath) == dir.last_write_time
+                !dir._dirty && get_last_modified(&dir.abspath) == dir.last_write_time
             }
         }
     }
@@ -159,9 +159,9 @@ impl JNode {
                 if let Some(last_write_time) = last_write_time {
                     dir.last_write_time = last_write_time;
                 }
-                if let Some(_scaned) = _scaned {
-                    dir._scaned = _scaned;
-                }
+                // if let Some(_scaned) = _scaned {
+                //     dir._scaned = _scaned;
+                // }
                 if let Some(count_dir) = count_dir {
                     dir.count_dir = count_dir;
                 }
@@ -184,11 +184,13 @@ impl JNode {
                 me.size = dumped.size;
             }
             (JNode::Dir(me), JNode::Dir(dumped)) => {
-                me._scaned = dumped._scaned;
+                // me._scaned = dumped._scaned;
                 me.last_write_time = dumped.last_write_time;
                 me.size = dumped.size;
                 me.count_dir = dumped.count_dir;
                 me.count_file = dumped.count_file;
+                me._dirty = dumped._dirty;
+                // me._scaned = dumped._scaned;
             }
             _ => panic!("Node type mismatch"),
         }
@@ -267,7 +269,7 @@ impl Into<DumpData> for FileNode {
             size: self.size,
             count_dir: 0,
             count_file: 0,
-            _scaned: true,
+            // _scaned: true,
             _dirty: false,
         }
     }
@@ -276,11 +278,11 @@ impl Into<DumpData> for FileNode {
 impl std::fmt::Display for FileNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let content = format!(
-            "[FileNode] name: {:?}\nabspath: {:?}\nmodify: {:?}\nsize: {:?}",
+            "****[FileNode]****\nname: {:?}\nabspath: {:?}\nmodify: {:?}\nsize: {:?}",
             self.abspath.file_name().unwrap(),
             self.abspath,
             pretty_last_modified(self.last_write_time),
-            (self.size as f64 / 1024.0 / 1024.0)
+            pretty_size(self.size),
         );
         write!(f, "{}", content)
     }
@@ -320,7 +322,7 @@ impl From<DumpData> for DirNode {
             size: data.size,
             count_dir: data.count_dir,
             count_file: data.count_file,
-            _scaned: data._scaned,
+            // _scaned: data._scaned,
             _dirty: data._dirty,
         }
     }
@@ -334,7 +336,7 @@ impl Into<DumpData> for DirNode {
             size: self.size,
             count_dir: self.count_dir,
             count_file: self.count_file,
-            _scaned: self._scaned,
+            // _scaned: self._scaned,
             _dirty: self._dirty,
         }
     }
@@ -349,11 +351,12 @@ impl Hash for DirNode {
 impl std::fmt::Display for DirNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let content = format!(
-            "[DirNode] name: {:?}\npath: {:?}\nmodify: {:?}\nsize: {:?}\nfolders: {:?}\nfiles: {:?}",
+            "****[DirNode]****{}\nname: {:?}\npath: {:?}\nmodify: {:?}\nsize: {:?}\nfolders: {:?}\nfiles: {:?}",
+            if self._dirty { " [dirty]" } else { "" },
             self.abspath.file_name().unwrap(),
             self.abspath,
             pretty_last_modified(self.last_write_time),
-            (self.size as f64 / 1024.0 / 1024.0),
+            pretty_size(self.size),
             self.count_dir,
             self.count_file
         );
@@ -374,7 +377,7 @@ impl DirNode {
             size,
             count_dir,
             count_file,
-            _scaned: false,
+            // _scaned: false,
             _dirty: true,
         }
     }
@@ -413,14 +416,33 @@ pub fn last_modify_systemtime(modify_time: u128) -> SystemTime {
         .unwrap()
 }
 
+const YEAR: u64 = 60 * 60 * 24 * 365;
+const MONTH: u64 = 60 * 60 * 24 * 30;
+const DAY: u64 = 60 * 60 * 24;
+const HOUR: u64 = 60 * 60;
+const MINUTE: u64 = 60;
 #[inline]
 pub fn pretty_last_modified(modify_time: u128) -> String {
     let msec = Duration::from_millis(modify_time as u64);
-    let year = msec.as_secs() / 31536000;
-    let month = (msec.as_secs() % 31536000) / 2592000;
-    let day = (msec.as_secs() % 2592000) / 86400;
-    let hour = (msec.as_secs() % 86400) / 3600;
-    let minute = (msec.as_secs() % 3600) / 60;
-    let second = msec.as_secs() % 60;
+    let year = msec.as_secs() / YEAR;
+    let month = (msec.as_secs() % YEAR) / MONTH;
+    let day = (msec.as_secs() % MONTH) / DAY;
+    let hour = (msec.as_secs() % DAY) / HOUR;
+    let minute = (msec.as_secs() % HOUR) / MINUTE;
+    let second = msec.as_secs() % MINUTE;
     format!("{}-{}-{} {}:{}:{}", year, month, day, hour, minute, second)
+}
+
+
+pub fn pretty_size(size: u64) -> String {
+    let size = size as f64;
+    if size < 1024.0 {
+        format!("{} B", size)
+    } else if size < 1024.0 * 1024.0 {
+        format!("{} KB", size / 1024.0)
+    } else if size < 1024.0 * 1024.0 * 1024.0 {
+        format!("{} MB", size / 1024.0 / 1024.0)
+    } else {
+        format!("{} GB", size / 1024.0 / 1024.0 / 1024.0)
+    }
 }

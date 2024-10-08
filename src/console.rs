@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::vec;
 
 use crossterm::cursor;
 use crossterm::event::read;
@@ -27,6 +28,7 @@ const TREE_INDENT: usize = 4;
 impl Console {
     pub fn new() -> Self {
         let current = std::env::current_dir().unwrap();
+        dbg!(&current);
         let manager = JManager::new();
         Self { manager, current }
     }
@@ -36,13 +38,15 @@ impl Console {
     pub fn exec(&mut self, raw_cmd: &str) -> Result<(), Box<dyn Error>> {
         let mut args = raw_cmd.split_whitespace();
         let cmd = args.next().unwrap();
-        
+
         let home_dir = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
         let file_path = PathBuf::from(home_dir).join("example.csv");
         match cmd {
             "cd" => {
-                let path = parse_cd(&raw_cmd.to_owned())?;
-                self.cd(&path)
+                let to = raw_cmd.to_owned();
+                let (to, abs) = parse_cd(&to)?;
+                let to = to_absolute(&self.current, &to, abs);
+                self.cd(&to)
             }
             "ls" => self.ls(),
             "scan" => self.scan(),
@@ -53,14 +57,24 @@ impl Console {
             }
             "dump" => self.manager.dump(&file_path),
             "load" => self.manager.load(&file_path),
+            #[cfg(debug_assertions)]
+            "debug" => {
+                let h = self.manager.locate_node(&self.current)?;
+                let chs = self.manager.get_children_node(&h);
+                println!("{h:?}, chs:\n");
+                for ch in chs {
+                    println!("{}", ch.0);
+                }
+                let ph = self.manager.get_parent(&h);
+                println!("{h:?}, ph:\n{}", ph);
+                Ok(())
+            },
             _ => Err("Unknown command".into()),
         }
     }
-    pub fn cd(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
-        let path = path[1..path.len() - 1].to_string();
-        let to = to_absolute(&self.current, &PathBuf::from(path));
+    pub fn cd(&mut self, to: &PathBuf) -> Result<(), Box<dyn Error>> {
         if to.is_dir() {
-            self.current = to;
+            self.current = to.to_path_buf();
             self.manager.locate_node(&self.current)?;
             Ok(())
         } else {
@@ -220,34 +234,108 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[inline]
-fn to_absolute(current: &PathBuf, path: &PathBuf) -> PathBuf {
-    let path = path.canonicalize().unwrap();
-    dbg!(&path);
-    if path.is_absolute() {
-        path.to_path_buf()
+fn to_absolute(current: &PathBuf, path: &[&str], abs: bool) -> PathBuf {
+    // let path = path.canonicalize().unwrap();
+    let res = if !abs {
+        let mut current = current.clone();
+        for p in path {
+            current.push(p);
+        }
+        current.canonicalize().unwrap()
     } else {
-        current.join(path).canonicalize().unwrap()
-    }
+        path.into_iter().map(|p| p.to_string()).collect::<PathBuf>()
+    };
+    dbg!(&res);
+    res
 }
 
-fn parse_cd(buffer: &String) -> Result<String, std::io::Error> {
-    let buffer = buffer[3..].trim().to_string();
-    let mut path = String::new();
-    let mut yinhao = false;
-    for c in buffer.chars() {
-        if c == '"' {
-            yinhao = !yinhao;
-        }
-        if yinhao {
-            path.push(c);
-        } else {
-            if c.is_whitespace() {
-                break;
-            } else {
-                path.push(c);
-            }
-        }
+fn parse_cd<'a>(buffer: &'a str) -> Result<(Vec<&'a str>, bool), std::io::Error> {
+    if buffer.len() <= 2 {
+        return Ok((vec!["."], false));
     }
-    Ok(path)
+    let buffer = buffer[2..].trim();
+    let buffer = if buffer.starts_with('\"') && buffer.ends_with('\"') {
+        &buffer[1..buffer.len() - 1]
+    } else {
+        buffer
+    };
+    // dbg!(&buffer);
+    let mut all = vec![];
+    let mut front = 0;
+    let mut last = 0;
+    let mut abs = false;
+    for c in buffer.chars() {
+        if c == '\\' || c == '/' {
+            // let pat = buffer[front..last].to_string();
+            let satisfy = ["C:", "D:", "E:", "F:"]
+                .map(|s| buffer[front..last].starts_with(s))
+                .into_iter()
+                .reduce(|a, b| a || b)
+                .unwrap();
+            if satisfy {
+                all.push(&buffer[front..last + 1]);
+                abs = true;
+            } else {
+                all.push(&buffer[front..last]);
+            }
+            front = last;
+            front += 1;
+            last += 1;
+            continue;
+        }
+        last += 1;
+    }
+    all.push(&buffer[front..last]);
+    Ok((all, abs))
+}
+
+#[test]
+fn test_parse_cd() {
+    let a = "cd \"E:\\1-code\\__repo__\\Jobs\"";
+    let (_a, _) = parse_cd(&a).unwrap();
+    assert_eq!(_a, vec!["E:\\", "1-code", "__repo__", "Jobs"]);
+
+    let b = "cd \"E:/ComfyUI_windows_portable/python_embeded/share/man/man1\"";
+    let (_b, _) = parse_cd(&b).unwrap();
+    assert_eq!(
+        _b,
+        vec![
+            "E:/",
+            "ComfyUI_windows_portable",
+            "python_embeded",
+            "share",
+            "man",
+            "man1"
+        ]
+    );
+
+    let c = "cd \"E:\\QQ\\resources\\app\\versions\\9.9.7-21804\\avsdk\"";
+    let (_c, _) = parse_cd(&c).unwrap();
+    assert_eq!(
+        _c,
+        vec![
+            "E:\\",
+            "QQ",
+            "resources",
+            "app",
+            "versions",
+            "9.9.7-21804",
+            "avsdk"
+        ]
+    );
+
+    let d = "cd \"..\\resources\\..\\versions\\9.9.7-21804\\avsdk\"";
+    let (_d, _) = parse_cd(&d).unwrap();
+    assert_eq!(
+        _d,
+        vec!["..", "resources", "..", "versions", "9.9.7-21804", "avsdk"]
+    );
+
+    let e = "cd ..";
+    let (_e, _) = parse_cd(&e).unwrap();
+    assert_eq!(_e, vec![".."]);
+
+    let f = "cd";
+    let (_f, _) = parse_cd(&f).unwrap();
+    assert_eq!(_f, vec!["."]);
 }

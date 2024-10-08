@@ -91,7 +91,7 @@ impl ManagerAction for JManager<u64, JNode> {
             self.phash.insert(h, ph);
             self.chash.entry(ph).or_insert_with(HashSet::new).insert(h);
         }
-        self.propagate_dirty(&h)?;
+        // self.propagate_dirty(&h)?;
         Ok(h)
     }
     fn locate_node(&mut self, path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
@@ -339,7 +339,13 @@ impl ManagerStorage for JManager<u64, JNode> {
             .map(|node| Into::<JNode>::into(node));
 
         for node in data {
-            let h = self.locate_node(node.path())?;
+            let h = jhash!(node);
+            if !self.nodes.contains_key(&h) {
+                self.create_node(node.path());
+                let ph = self.get_parent(&h);
+                self.phash.insert(h, ph);
+                self.chash.entry(ph).or_insert_with(HashSet::new).insert(h);
+            }
             // dbg!(&node);
             self.nodes.entry(h).and_modify(|value| {
                 value.load(&node);
