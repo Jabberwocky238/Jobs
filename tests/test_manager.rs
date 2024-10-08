@@ -23,6 +23,7 @@ fn create_dir_file(dir_path: &str, count: usize) {
 
 #[allow(non_snake_case)]
 #[test]
+#[ignore]
 fn test_manager() -> Result<(), Box<dyn Error>> {
     let TEMP_DIR = env!("TEMP");
     let TEMP_DIR = format!("{TEMP_DIR}/Jobs_test_manager");

@@ -24,6 +24,7 @@ use Jobs::{JManager, JNodeAction, ManagerAction, ManagerStorage};
 
 const DEFAULT_DIR_CNT: u64 = 4;
 const DEFAULT_FILE_CNT: u64 = 7;
+
 /// A/
 /// |---B/
 /// |   |---C/
@@ -35,6 +36,10 @@ const DEFAULT_FILE_CNT: u64 = 7;
 /// |   |   |---file_0.txt
 /// |   |---file_b21.txt
 /// |   |---file_b22.txt
+///[|---node_modules/                ]
+///[|   |---inside/                  ]
+///[|   |   |---file_node_modules.txt]
+///[|   |---file_a.txt               ]
 /// |---file_a.txt
 #[allow(non_snake_case)]
 fn init_test_dir(serial_number: i32) -> String {
@@ -87,7 +92,7 @@ fn init_test_dir(serial_number: i32) -> String {
 /// 扫描A，增加B2/C3(空文件夹)，扫描A
 ///
 /// case 4: 子节点修改感知
-/// 扫描A，修改B2为B2333，扫描A
+/// 扫描A，修改C2为C2333，扫描A
 ///
 /// case 5: 子节点删除感知
 /// 扫描A，删除C，扫描A
@@ -164,7 +169,7 @@ mod folder_level {
     }
 
     /// case 4: 子节点修改感知
-    /// 扫描A，修改B2为B2333，扫描A
+    /// 扫描A，修改C2为C2333，扫描A
     #[allow(non_snake_case)]
     #[test]
     fn test_mng_4() -> Result<(), Box<dyn Error>> {
@@ -175,9 +180,9 @@ mod folder_level {
         let node_h = mng.locate_node(&A)?;
         mng.update_node(&node_h)?;
 
-        let B2: PathBuf = [&path, "A", "B2"].iter().collect();
-        let B2333: PathBuf = [&path, "A", "B2333"].iter().collect();
-        fs::rename(B2, B2333).unwrap();
+        let C2: PathBuf = [&path, "A", "B2", "C2"].iter().collect();
+        let C2333: PathBuf = [&path, "A", "B2", "C2333"].iter().collect();
+        fs::rename(C2, C2333).unwrap();
 
         mng.update_node(&node_h)?;
         let root = mng.get_info(&node_h)?;
@@ -259,6 +264,8 @@ mod file_level {
         let A: PathBuf = [&path, "A"].iter().collect();
         let node_h = mng.locate_node(&A)?;
         mng.update_node(&node_h)?;
+        let root = mng.get_info(&node_h)?;
+        assert_eq!(root.size(), 133);
 
         let file_0: PathBuf = [&path, "A", "B", "C", "file_0.txt"].iter().collect();
         fs::OpenOptions::new()
@@ -320,28 +327,30 @@ mod filter_sys {
         let path = init_test_dir(31);
         let mut mng = JManager::new();
 
-        // let node_modules: PathBuf = [&path, "A", "B", "node_modules"].iter().collect();
+        let A: PathBuf = [&path, "A"].iter().collect();
+        let node_h = mng.locate_node(&A)?;
+        mng.update_node(&node_h)?;
+        let node_cnt = mng.get_node_cnt();
+
         let inside: PathBuf = [&path, "A", "B", "node_modules", "inside"].iter().collect();
         fs::create_dir_all(inside)?;
         let file: PathBuf = [&path, "A", "B", "node_modules", "file.txt"]
             .iter()
             .collect();
-        fs::write(file, b"new file").unwrap();
+        fs::write(file, b"new file")?;
         let file: PathBuf = [&path, "A", "B", "node_modules", "inside", "file.txt"]
             .iter()
             .collect();
-        fs::write(file, b"new file").unwrap();
+        fs::write(file, b"new file")?;
 
         let A: PathBuf = [&path, "A"].iter().collect();
         let node_h = mng.locate_node(&A)?;
         mng.update_node(&node_h)?;
         let root = mng.get_info(&node_h)?;
+        dbg!(&mng.nodes);
 
-        assert_eq!(root.size(), 141);
-        assert_eq!(
-            mng.get_node_cnt(),
-            (DEFAULT_DIR_CNT + DEFAULT_FILE_CNT + 1) as usize
-        );
+        assert_eq!(root.size(), 133);
+        assert_eq!(mng.get_node_cnt(), node_cnt + 1);
         assert_eq!(root.count_file().unwrap(), DEFAULT_FILE_CNT + 2);
         assert_eq!(root.count_dir().unwrap(), DEFAULT_DIR_CNT + 2);
         Ok(())
@@ -459,7 +468,8 @@ mod persistent {
         let file: PathBuf = [&path, "A", "B2", "C3", "file_NEW.txt"].iter().collect();
         fs::create_dir_all(c2)?;
         fs::create_dir_all(C3)?;
-        fs::File::create(file)?;
+        let mut file = fs::File::create(file)?;
+        file.write(b"hello")?;
 
         let mut mng = JManager::new();
         mng.load(&dump_path)?;

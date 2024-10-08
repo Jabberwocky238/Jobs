@@ -29,6 +29,7 @@ pub struct DirNode {
     pub count_dir: usize,
     pub count_file: usize,
     pub _scaned: bool,
+    pub _dirty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Serialize, Deserialize)]
@@ -39,6 +40,7 @@ pub struct DumpData {
     pub count_dir: usize,
     pub count_file: usize,
     pub _scaned: bool,
+    pub _dirty: bool,
 }
 
 /// All implementation is down below
@@ -126,7 +128,7 @@ impl JNode {
                 if fs::metadata(&dir.abspath).is_err() {
                     return false; // node not exists
                 }
-                dir._scaned && get_last_modified(&dir.abspath) == dir.last_write_time
+                !dir._dirty && dir._scaned && get_last_modified(&dir.abspath) == dir.last_write_time
             }
         }
     }
@@ -138,6 +140,7 @@ impl JNode {
         _scaned: Option<bool>,
         count_dir: Option<usize>,
         count_file: Option<usize>,
+        _dirty: Option<bool>,
     ) {
         match self {
             Self::File(file) => {
@@ -163,6 +166,9 @@ impl JNode {
                 }
                 if let Some(count_file) = count_file {
                     dir.count_file = count_file;
+                }
+                if let Some(_dirty) = _dirty {
+                    dir._dirty = _dirty;
                 }
             }
         }
@@ -261,6 +267,7 @@ impl Into<DumpData> for FileNode {
             count_dir: 0,
             count_file: 0,
             _scaned: true,
+            _dirty: false,
         }
     }
 }
@@ -313,6 +320,7 @@ impl From<DumpData> for DirNode {
             count_dir: data.count_dir,
             count_file: data.count_file,
             _scaned: data._scaned,
+            _dirty: data._dirty,
         }
     }
 }
@@ -326,6 +334,7 @@ impl Into<DumpData> for DirNode {
             count_dir: self.count_dir,
             count_file: self.count_file,
             _scaned: self._scaned,
+            _dirty: self._dirty,
         }
     }
 }
@@ -365,6 +374,7 @@ impl DirNode {
             count_dir,
             count_file,
             _scaned: false,
+            _dirty: true,
         }
     }
 }
